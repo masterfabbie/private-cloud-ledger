@@ -46,7 +46,38 @@ It replaces the old single-file version, which is kept at `legacy/financetracker
 
 ## Quick start (Docker)
 
+### Prebuilt image from Docker Hub
+
+Ready-made images are published at [`drsmee/proud-ledger`](https://hub.docker.com/r/drsmee/proud-ledger). Pick a version from the [Tags](https://hub.docker.com/r/drsmee/proud-ledger/tags) page. Images are currently built for `linux/amd64`.
+
+Create a folder with a `.env` (copy [`.env.example`](.env.example) and set at least `ADMIN_PASSWORD`) and this `docker-compose.yml`:
+
+```yaml
+services:
+  app:
+    image: drsmee/proud-ledger:<tag>   # e.g. a version from the Tags page
+    container_name: proud-ledger
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: sqlite:////data/finance.db
+    ports:
+      - "8000:8000"
+    volumes:
+      - ft-data:/data
+
+volumes:
+  ft-data:
+```
+
 ```bash
+docker compose up -d
+```
+
+### Build it yourself
+
+```bash
+git clone https://github.com/masterfabbie/private-cloud-ledger.git && cd private-cloud-ledger
 cp .env.example .env        # then edit ADMIN_PASSWORD
 docker compose up -d --build
 ```
