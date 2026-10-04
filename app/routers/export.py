@@ -33,19 +33,24 @@ def _filename(f: TxFilters, ext: str) -> str:
 
 
 def _rows(db: Session, user: models.User, f: TxFilters):
+    """One row per transaction, or one row per part for split transactions (the amounts add up)."""
     for t in db.scalars(filtered_transactions(user.id, f)).unique():
-        yield t, [
-            t.booking_date.isoformat(),
-            t.description,
-            t.payer,
-            abs(t.amount_cents) / 100,
-            "income" if t.amount_cents >= 0 else "expense",
-            t.category.name if t.category else "",
-            "; ".join(sorted(tag.name for tag in t.tags)),
-            t.account.name,
-            t.counterparty_iban,
-            t.notes,
+        lines = [(t.amount_cents, t.category, "")] if not t.splits else [
+            (sp.amount_cents, sp.category, sp.note) for sp in t.splits
         ]
+        for cents, category, note in lines:
+            yield t, cents, [
+                t.booking_date.isoformat(),
+                f"{t.description} ({note})" if note else t.description,
+                t.payer,
+                abs(cents) / 100,
+                "income" if cents >= 0 else "expense",
+                category.name if category else "",
+                "; ".join(sorted(tag.name for tag in t.tags)),
+                t.account.name,
+                t.counterparty_iban,
+                t.notes,
+            ]
 
 
 def _safe_cell(value):
@@ -60,7 +65,7 @@ def export_csv(f: TxFilters = Depends(tx_filters), db: Session = Depends(get_db)
     buf = io.StringIO()
     writer = csv.writer(buf, delimiter=";", quoting=csv.QUOTE_MINIMAL)
     writer.writerow(HEADERS)
-    for _, row in _rows(db, user, f):
+    for _, _, row in _rows(db, user, f):
         row[3] = f"{row[3]:.2f}".replace(".", ",")  # European decimal comma, like the original export
         writer.writerow([_safe_cell(c) for c in row])
     return Response(
@@ -76,9 +81,9 @@ def export_xlsx(f: TxFilters = Depends(tx_filters), db: Session = Depends(get_db
     ws = wb.active
     ws.title = "Transactions"
     ws.append(HEADERS)
-    for t, row in _rows(db, user, f):
+    for t, cents, row in _rows(db, user, f):
         row[0] = t.booking_date
-        row[3] = t.amount_cents / 100  # signed in Excel so SUM() works
+        row[3] = cents / 100  # signed in Excel so SUM() works
         ws.append([_safe_cell(c) for c in row])
     for cell in ws["A"][1:]:
         cell.number_format = "DD.MM.YYYY"

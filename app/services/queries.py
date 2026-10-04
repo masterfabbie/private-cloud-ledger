@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from fastapi import Query
-from sqlalchemy import Select, extract, or_, select
+from sqlalchemy import Select, and_, extract, or_, select
 
 from app import models
 
@@ -54,10 +54,13 @@ def apply_filters(stmt: Select, user_id: int, f: TxFilters, *, skip_categories: 
     if f.date_to:
         stmt = stmt.where(T.booking_date <= f.date_to)
     if f.category_ids and not skip_categories:
+        # Split transactions match through their parts, all others through their own category.
+        S = models.TransactionSplit
         ids = [i for i in f.category_ids if i > 0]
-        conds = [T.category_id.in_(ids)] if ids else []
+        unsplit = ~T.splits.any()
+        conds = [and_(unsplit, T.category_id.in_(ids)), T.splits.any(S.category_id.in_(ids))] if ids else []
         if 0 in f.category_ids:  # 0 = uncategorized
-            conds.append(T.category_id.is_(None))
+            conds += [and_(unsplit, T.category_id.is_(None)), T.splits.any(S.category_id.is_(None))]
         stmt = stmt.where(or_(*conds))
     if f.tag:
         stmt = stmt.where(T.tags.any(models.Tag.name == f.tag.lower()))

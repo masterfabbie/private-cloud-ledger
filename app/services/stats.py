@@ -2,7 +2,7 @@ from calendar import monthrange
 from collections import defaultdict
 from datetime import date
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app import models
@@ -10,11 +10,24 @@ from app.services.queries import TxFilters, apply_filters
 
 T = models.Transaction
 C = models.Category
+S = models.TransactionSplit
 
 
 def _rows(db: Session, user_id: int, f: TxFilters, skip_categories: bool = False):
-    stmt = select(T.booking_date, T.amount_cents, T.category_id, C.kind).outerjoin(C, T.category_id == C.id)
-    return db.execute(apply_filters(stmt, user_id, f, skip_categories=skip_categories)).all()
+    """(date, amount, category_id, category kind) per *effective line*: split transactions
+    contribute one line per part, all others one line. Category filters apply to the lines."""
+    category = case((S.id.is_not(None), S.category_id), else_=T.category_id)
+    stmt = (
+        select(T.booking_date, func.coalesce(S.amount_cents, T.amount_cents), category, C.kind)
+        .select_from(T)
+        .outerjoin(S, S.transaction_id == T.id)
+        .outerjoin(C, C.id == category)
+    )
+    rows = db.execute(apply_filters(stmt, user_id, f, skip_categories=True)).all()
+    if f.category_ids and not skip_categories:
+        wanted = set(f.category_ids)
+        rows = [r for r in rows if (r[2] or 0) in wanted]
+    return rows
 
 
 def summary(db: Session, user_id: int, f: TxFilters) -> dict:
@@ -106,13 +119,10 @@ def month_bounds(year: int, month: int) -> tuple[date, date]:
 
 def budget_status(db: Session, user_id: int, year: int, month: int) -> list[dict]:
     start, end = month_bounds(year, month)
-    spent = dict(
-        db.execute(
-            select(T.category_id, func.sum(T.amount_cents))
-            .where(T.user_id == user_id, T.booking_date >= start, T.booking_date <= end, T.amount_cents < 0)
-            .group_by(T.category_id)
-        ).all()
-    )
+    spent: dict[int | None, int] = defaultdict(int)
+    for _, cents, cat_id, _ in _rows(db, user_id, TxFilters(date_from=start, date_to=end)):
+        if cents < 0:
+            spent[cat_id] += cents
     out = []
     budgets = db.execute(
         select(models.Budget, C).join(C, models.Budget.category_id == C.id).where(models.Budget.user_id == user_id)

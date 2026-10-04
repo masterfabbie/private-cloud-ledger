@@ -66,6 +66,8 @@ class AccountIn(BaseModel):
     currency: str = "EUR"
     opening_balance_cents: int = 0
     opening_date: date | None = None
+    kind: str = Field("checking", pattern="^(checking|savings|credit_card|cash)$")
+    settlement_pattern: str = Field("", max_length=100)
 
     @field_validator("iban")
     @classmethod
@@ -81,6 +83,8 @@ class AccountOut(ORM):
     currency: str
     opening_balance_cents: int
     opening_date: date | None
+    kind: str
+    settlement_pattern: str
 
 
 # ---- categories / tags
@@ -125,6 +129,26 @@ class TransactionPatch(BaseModel):
     tags: list[str] | None = None
 
 
+class SplitPart(BaseModel):
+    amount_cents: int
+    category_id: int | None = None
+    note: str = Field("", max_length=255)
+
+
+class SplitPartOut(SplitPart):
+    id: int
+    category_name: str | None = None
+    category_color: str | None = None
+
+
+class SplitsIn(BaseModel):
+    parts: list[SplitPart] = Field(default_factory=list, max_length=100)
+
+
+class SplitTextIn(BaseModel):
+    text: str = Field(max_length=20000)
+
+
 class TransactionOut(BaseModel):
     id: int
     account_id: int
@@ -141,6 +165,7 @@ class TransactionOut(BaseModel):
     notes: str
     tags: list[str]
     import_batch_id: int | None
+    splits: list[SplitPartOut] = []
 
 
 class TransactionPage(BaseModel):

@@ -61,6 +61,10 @@ class Account(Base):
     currency: Mapped[str] = mapped_column(String(3), default="EUR")
     opening_balance_cents: Mapped[int] = mapped_column(Integer, default=0)
     opening_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    kind: Mapped[str] = mapped_column(String(20), default="checking", server_default="checking")  # checking | savings | credit_card | cash
+    # Credit cards: text that identifies the card settlement on the paying (checking) account,
+    # e.g. "KREDITKARTENABRECHNUNG". Matching transactions are treated as transfers.
+    settlement_pattern: Mapped[str] = mapped_column(String(100), default="", server_default="")
 
 
 class Category(Base):
@@ -129,6 +133,28 @@ class Transaction(Base):
     category: Mapped[Category | None] = relationship(lazy="joined")
     account: Mapped[Account] = relationship(lazy="joined")
     tags: Mapped[list[Tag]] = relationship(secondary=transaction_tags, lazy="selectin")
+    splits: Mapped[list["TransactionSplit"]] = relationship(
+        back_populates="transaction", cascade="all, delete-orphan", lazy="selectin", order_by="TransactionSplit.id"
+    )
+
+
+class TransactionSplit(Base):
+    """Part of a transaction with its own category, e.g. one item of an Amazon order.
+    The parts of a transaction always add up to its amount; statistics use the parts."""
+
+    __tablename__ = "transaction_splits"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    transaction_id: Mapped[int] = mapped_column(ForeignKey("transactions.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    amount_cents: Mapped[int] = mapped_column(Integer)
+    category_id: Mapped[int | None] = mapped_column(
+        ForeignKey("categories.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    note: Mapped[str] = mapped_column(String(255), default="")
+
+    transaction: Mapped[Transaction] = relationship(back_populates="splits")
+    category: Mapped[Category | None] = relationship(lazy="joined")
 
 
 class ImportProfile(Base):

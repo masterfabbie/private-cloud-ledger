@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import models
+from app.services import cards
 from app.services import csv_parser as cp
 from app.services.defaults import LEGACY_CATEGORY_KEYS
 from app.services.rules import first_match, get_or_create_tags, load_rules
@@ -195,6 +196,8 @@ def import_rows(
     else:
         result.batch_id = batch.id
     db.commit()
+    if result.batch_id:
+        cards.mark_settlements(db, user.id, batch_id=result.batch_id)
     return result
 
 

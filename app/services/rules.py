@@ -116,6 +116,8 @@ def rerun_rules(db: Session, user_id: int, only_uncategorized: bool = True) -> i
         q = q.where(or_(models.Transaction.category_id.is_(None), models.Transaction.category_id.in_(other_ids)))
     changed = 0
     for tx in db.scalars(q):
+        if tx.splits:
+            continue
         rule = first_match(rules, tx.description, tx.payer, tx.counterparty_iban, tx.amount_cents)
         if rule and rule.category_id != tx.category_id:
             apply_rule_to(db, rule, tx)
@@ -138,6 +140,8 @@ def apply_rule_everywhere(db: Session, rule: models.Rule) -> int:
     """Apply a rule to every matching transaction, whatever its current category."""
     changed = 0
     for tx in matching_transactions(db, rule.user_id, rule):
+        if tx.splits:
+            continue  # split transactions keep their parts
         before = (tx.category_id, {t.name for t in tx.tags})
         apply_rule_to(db, rule, tx)
         if (tx.category_id, {t.name for t in tx.tags}) != before:

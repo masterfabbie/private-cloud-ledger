@@ -1,5 +1,5 @@
 import {
-    accountOptions, api, categoryById, categoryOptions, centsToInput, clear, confirmDialog, el, fmtDate, fmtSigned,
+    accountOptions, api, categoryById, categoryOptions, centsToInput, clear, confirmDialog, el, fmtDate, fmtMoney, fmtSigned,
     loadRefs, modal, options, parseMoney, run, showError, state, toast, todayIso, toQuery,
 } from './api.js';
 import { filterBar, filterQuery } from './filters.js';
@@ -88,17 +88,31 @@ function row(t, refresh) {
         select.focus();
     });
 
+    const isSplit = t.splits.length > 0;
+    const splitChip = isSplit
+        ? el('button', { class: 'transaction-category', title: 'Edit the split', onclick: () => splitEditor(t).then(ok => ok && refresh()) },
+            `✂ Split into ${t.splits.length}`)
+        : null;
+    const splitLines = isSplit
+        ? el('div', { class: 'split-lines' }, t.splits.map(sp => el('div', { class: 'split-line' },
+            el('span', {}, el('span', { class: 'dot', style: { background: sp.category_color || '#C9CBCF', marginRight: '6px' } }),
+                sp.category_name || 'Uncategorized', sp.note ? el('span', { class: 'muted' }, ` · ${sp.note}`) : null),
+            el('span', { class: sp.amount_cents < 0 ? 'neg' : 'pos' }, fmtSigned(sp.amount_cents)))))
+        : null;
+
     return el('div', { class: 'transaction-item' },
         el('div', { class: 'transaction-info' },
             el('div', { class: 'transaction-title' }, t.description),
             el('div', { class: 'transaction-meta' },
-                `${fmtDate(t.booking_date)} • `, catBtn,
+                `${fmtDate(t.booking_date)} • `, isSplit ? splitChip : catBtn,
                 state.accounts.length > 1 ? ` • ${t.account_name}` : '',
                 t.payer ? [el('br'), el('small', {}, `Payer/Payee: ${t.payer}`)] : null,
                 t.tags.length ? [el('br'), el('small', {}, 'Tags: ', t.tags.map(x => el('span', { class: 'tag-small' }, x)))] : null,
-                t.notes ? [el('br'), el('small', {}, `📝 ${t.notes}`)] : null)),
+                t.notes ? [el('br'), el('small', {}, `📝 ${t.notes}`)] : null),
+            splitLines),
         el('div', { class: 'transaction-actions' },
             el('div', { class: `transaction-amount ${t.type === 'income' ? 'pos' : 'neg'}` }, fmtSigned(t.amount_cents)),
+            el('button', { class: 'btn-light btn-sm', title: 'Distribute this amount over several categories', onclick: () => splitEditor(t).then(ok => ok && refresh()) }, 'Split'),
             el('button', { class: 'btn-light btn-sm', onclick: () => editTransaction(t).then(ok => ok && refresh()) }, 'Edit'),
             el('button', { class: 'btn-danger btn-sm', onclick: async () => {
                 if (await confirmDialog('Are you sure you want to delete this transaction?', { danger: true, confirmLabel: 'Delete' })) {
@@ -200,4 +214,107 @@ export function editTransaction(t) {
         group('Notes', notes),
         el('div', { class: 'actions' }, el('button', { type: 'button', class: 'btn-light', onclick: () => close(false) }, 'Cancel'), save));
     });
+}
+
+/** Distribute one transaction over several categories, e.g. the items of an Amazon order. */
+export function splitEditor(t) {
+    return modal('Split transaction', close => {
+        const sign = t.amount_cents < 0 ? -1 : 1;
+        const total = Math.abs(t.amount_cents);
+        const rowsBox = el('div', { class: 'split-rows' });
+        const remainingEl = el('strong');
+        const save = el('button', { class: 'btn', type: 'button' }, 'Save split');
+        const parts = [];
+
+        const remaining = () => total - parts.reduce((sum, p) => {
+            const c = parseMoney(p.amount.value);
+            return sum + (Number.isNaN(c) ? 0 : Math.abs(c));
+        }, 0);
+
+        const update = () => {
+            const rest = remaining();
+            remainingEl.textContent = rest === 0 ? 'Fully distributed ✓' : `Remaining: ${fmtMoney(rest)}`;
+            remainingEl.className = rest === 0 ? 'pos' : 'neg';
+            const filled = parts.filter(p => p.amount.value.trim());
+            save.disabled = rest !== 0 || filled.length < 2 || filled.some(p => Number.isNaN(parseMoney(p.amount.value)));
+        };
+
+        const addPart = (part = {}) => {
+            const amount = el('input', { inputmode: 'decimal', placeholder: '0,00', value: part.amount_cents ? centsToInput(part.amount_cents) : '' });
+            const category = el('select', {}, categoryOptions(part.category_id ?? '', 'Uncategorized'));
+            const note = el('input', { placeholder: 'Note, e.g. the item', value: part.note || '' });
+            const p = { amount, category, note };
+            const restBtn = el('button', { type: 'button', class: 'btn-light btn-sm', title: 'Put the remaining amount here' }, '= rest');
+            const removeBtn = el('button', { type: 'button', class: 'btn-light btn-sm', title: 'Remove this part' }, '✕');
+            const line = el('div', { class: 'split-row' }, el('div', { class: 'split-amount' }, amount), category, note, restBtn, removeBtn);
+            restBtn.addEventListener('click', () => {
+                const current = parseMoney(amount.value);
+                const rest = remaining() + (Number.isNaN(current) ? 0 : Math.abs(current));
+                amount.value = rest > 0 ? centsToInput(rest) : '';
+                update();
+            });
+            removeBtn.addEventListener('click', () => { parts.splice(parts.indexOf(p), 1); line.remove(); update(); });
+            amount.addEventListener('input', update);
+            parts.push(p);
+            rowsBox.append(line);
+            update();
+            return p;
+        };
+
+        if (t.splits.length) t.splits.forEach(sp => addPart(sp));
+        else { addPart({ category_id: t.category_id }); addPart(); }
+
+        // Paste lines from the order or statement: "12,99 Netflix", "USB cable; 9.99", ...
+        const paste = el('textarea', { rows: 4, placeholder: 'Paste lines with amounts, one item per line, e.g.\nKaffeebohnen 12,99\nUSB-C Kabel 9,99' });
+        const pasteInfo = el('div', { class: 'muted small' });
+        const pasteBtn = el('button', { type: 'button', class: 'btn-light btn-sm' }, 'Add lines as parts');
+        pasteBtn.addEventListener('click', () => run(pasteBtn, async () => {
+            if (!paste.value.trim()) return;
+            const r = await api(`/transactions/${t.id}/split-lines`, { method: 'POST', body: { text: paste.value } });
+            // Fill empty rows first, then add new ones.
+            for (const part of r.parts) {
+                const empty = parts.find(p => !p.amount.value.trim() && !p.note.value.trim());
+                if (empty) {
+                    empty.amount.value = centsToInput(part.amount_cents);
+                    empty.note.value = part.note;
+                    if (part.category_id) empty.category.value = String(part.category_id);
+                } else {
+                    addPart(part);
+                }
+            }
+            paste.value = '';
+            pasteInfo.textContent = `${r.parts.length} part(s) added` + (r.skipped.length ? `; no amount found in: ${r.skipped.join(' | ')}` : '');
+            update();
+        }));
+
+        save.addEventListener('click', () => run(save, async () => {
+            const body = { parts: parts.filter(p => p.amount.value.trim()).map(p => ({
+                amount_cents: sign * Math.abs(parseMoney(p.amount.value)),
+                category_id: p.category.value ? Number(p.category.value) : null,
+                note: p.note.value.trim(),
+            })) };
+            await api(`/transactions/${t.id}/splits`, { method: 'PUT', body });
+            close(true);
+        }));
+        const unsplit = t.splits.length
+            ? el('button', { type: 'button', class: 'btn-light', onclick: () => run(null, async () => {
+                await api(`/transactions/${t.id}/splits`, { method: 'PUT', body: { parts: [] } });
+                close(true);
+            }) }, 'Remove split')
+            : null;
+
+        return el('div', {},
+            el('div', { class: 'spread' },
+                el('div', {}, el('strong', {}, t.description), el('div', { class: 'muted small' }, `${fmtDate(t.booking_date)} · ${t.payer || t.account_name}`)),
+                el('div', { class: `transaction-amount ${sign < 0 ? 'neg' : 'pos'}` }, fmtSigned(t.amount_cents))),
+            rowsBox,
+            el('div', { class: 'spread', style: { margin: '8px 0 16px' } },
+                el('button', { type: 'button', class: 'btn-light btn-sm', onclick: () => addPart().amount.focus() }, '+ Add part'),
+                remainingEl),
+            el('label', {}, 'Quick entry'),
+            paste,
+            el('div', { class: 'row', style: { margin: '6px 0 4px' } }, pasteBtn, pasteInfo),
+            el('p', { class: 'muted small' }, 'The last amount on each line is used; categories are suggested by your rules.'),
+            el('div', { class: 'actions' }, unsplit, el('button', { type: 'button', class: 'btn-light', onclick: () => close(false) }, 'Cancel'), save));
+    }, { wide: true });
 }

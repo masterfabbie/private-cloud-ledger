@@ -8,7 +8,7 @@ from app import models, schemas
 from app.auth import get_current_user
 from app.db import get_db
 from app.routers.common import owned, owned_account
-from app.services import recurring
+from app.services import recurring, splits as split_service
 from app.services.importer import manual_dedup_hash
 from app.services.queries import TxFilters, filtered_transactions, tx_filters
 from app.services.rules import get_or_create_tags
@@ -33,6 +33,14 @@ def to_out(tx: models.Transaction) -> schemas.TransactionOut:
         notes=tx.notes,
         tags=sorted(t.name for t in tx.tags),
         import_batch_id=tx.import_batch_id,
+        splits=[
+            schemas.SplitPartOut(
+                id=sp.id, amount_cents=sp.amount_cents, category_id=sp.category_id, note=sp.note,
+                category_name=sp.category.name if sp.category else None,
+                category_color=sp.category.color if sp.category else None,
+            )
+            for sp in tx.splits
+        ],
     )
 
 
@@ -110,6 +118,29 @@ def update_transaction(
     db.commit()
     db.refresh(tx)
     return to_out(tx)
+
+
+@router.put("/{tx_id}/splits", response_model=schemas.TransactionOut)
+def set_splits(tx_id: int, data: schemas.SplitsIn, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    """Split a transaction into parts with their own categories (an empty list removes the split)."""
+    tx = owned(db, models.Transaction, tx_id, user)
+    for part in data.parts:
+        _check_category(db, part.category_id, user)
+    try:
+        split_service.set_splits(db, tx, [p.model_dump() for p in data.parts])
+    except split_service.SplitError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    db.commit()
+    db.refresh(tx)
+    return to_out(tx)
+
+
+@router.post("/{tx_id}/split-lines")
+def split_lines(tx_id: int, data: schemas.SplitTextIn, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    """Parse pasted lines ("12,99 Netflix") into split parts with suggested categories."""
+    tx = owned(db, models.Transaction, tx_id, user)
+    parts, skipped = split_service.parse_lines(data.text, tx, db)
+    return {"parts": parts, "skipped": skipped}
 
 
 @router.post("/bulk-categorize")

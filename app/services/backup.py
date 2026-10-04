@@ -40,7 +40,11 @@ def export_data(db: Session, user: models.User) -> dict:
         "username": user.username,
         "accounts": dump(models.Account),
         "categories": dump(models.Category),
-        "transactions": dump(models.Transaction, tags=lambda t: sorted(tag.name for tag in t.tags)),
+        "transactions": dump(
+            models.Transaction,
+            tags=lambda t: sorted(tag.name for tag in t.tags),
+            splits=lambda t: [{"amount_cents": sp.amount_cents, "category_id": sp.category_id, "note": sp.note} for sp in t.splits],
+        ),
         "rules": dump(models.Rule),
         "budgets": dump(models.Budget),
         "recurring": dump(models.RecurringSeries),
@@ -62,6 +66,8 @@ class BkAccount(_Row):
     currency: str = "EUR"
     opening_balance_cents: int = 0
     opening_date: date | None = None
+    kind: Literal["checking", "savings", "credit_card", "cash"] = "checking"
+    settlement_pattern: str = ""
 
 
 class BkCategory(_Row):
@@ -69,6 +75,12 @@ class BkCategory(_Row):
     name: str
     color: str = "#667eea"
     kind: Literal["expense", "income", "transfer"] = "expense"
+
+
+class BkSplit(_Row):
+    amount_cents: int
+    category_id: int | None = None
+    note: str = ""
 
 
 class BkTransaction(_Row):
@@ -84,6 +96,7 @@ class BkTransaction(_Row):
     dedup_hash: str
     created_at: datetime | None = None
     tags: list[str] = []
+    splits: list[BkSplit] = []
 
 
 class BkRule(_Row):
@@ -156,6 +169,11 @@ def _check_references(bk: Backup) -> None:
             raise BackupError(f"Transaction {t.id} refers to an account that is not in the backup.")
         if t.category_id is not None and t.category_id not in category_ids:
             raise BackupError(f"Transaction {t.id} refers to a category that is not in the backup.")
+        for sp in t.splits:
+            if sp.category_id is not None and sp.category_id not in category_ids:
+                raise BackupError(f"A split of transaction {t.id} refers to a category that is not in the backup.")
+        if t.splits and sum(sp.amount_cents for sp in t.splits) != t.amount_cents:
+            raise BackupError(f"The split parts of transaction {t.id} do not add up to its amount.")
         key = (t.account_id, t.dedup_hash)
         if key in seen_hashes:
             raise BackupError(f"Transaction {t.id} is duplicated in the backup.")
@@ -236,7 +254,7 @@ def restore(db: Session, user: models.User, bk: Backup) -> None:
             return tags[key]
 
         for t in bk.transactions:
-            fields = t.model_dump(exclude={"id", "tags", "account_id", "category_id", "created_at"})
+            fields = t.model_dump(exclude={"id", "tags", "account_id", "category_id", "created_at", "splits"})
             tx = models.Transaction(
                 user_id=uid,
                 account_id=account_map[t.account_id],
@@ -246,6 +264,13 @@ def restore(db: Session, user: models.User, bk: Backup) -> None:
             if t.created_at is not None:
                 tx.created_at = t.created_at
             tx.tags = [tag(n) for n in dict.fromkeys(t.tags) if n.strip()]
+            tx.splits = [
+                models.TransactionSplit(
+                    user_id=uid, amount_cents=sp.amount_cents, note=sp.note,
+                    category_id=category_map.get(sp.category_id) if sp.category_id is not None else None,
+                )
+                for sp in t.splits
+            ]
             db.add(tx)
 
         for r in bk.rules:

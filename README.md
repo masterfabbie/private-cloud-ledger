@@ -22,6 +22,13 @@ It replaces the old single-file version, which is kept at `legacy/financetracker
 - **Duplicate detection:** re-importing overlapping exports never creates doubles, and genuinely identical transactions within one file are kept.
 - **Undo** for a whole import from the import history.
 - **Multiple accounts** with opening balances, a balance-over-time chart, and automatic detection of transfers between your own accounts.
+- **Credit cards:** give a credit card account the text your bank uses for the card settlement (e.g. "KREDITKARTENABRECHNUNG").
+  - The settlement on your checking account and the matching payment on the card statement are counted as transfers, so card purchases are not counted twice.
+  - The Accounts page shows each settlement and whether the card statement has the matching payment.
+- **Split transactions:** distribute one booking, such as an Amazon order or a supermarket receipt, over several categories.
+  - The editor shows the remaining amount, and "= rest" fills the remaining amount into a row.
+  - You can paste the items as lines (`Kaffeebohnen 12,99`). Categories are suggested by your rules.
+  - Statistics, budgets, filters and exports use the parts.
 - **Categories** with colours, and **rules** for auto-categorization:
   - A rule can match on payer, description or IBAN, using contains, equals or regex, and on the amount (exactly, between, at least or at most). Either part can be used alone.
   - While you edit a rule, a live preview shows which transactions it matches and warns when an earlier rule would assign them to a different category. One checkbox applies the rule to those transactions right away.
