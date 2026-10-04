@@ -48,6 +48,7 @@ export async function render(root) {
                 el('a', { class: 'btn-light', href: '/api/export/xlsx' }, 'All transactions (Excel)'),
                 el('a', { class: 'btn-light', href: '/api/export/csv' }, 'All transactions (CSV)')))));
     root.append(restoreCard());
+    root.append(await cleanupCard());
 }
 
 const plural = (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`;
@@ -115,5 +116,42 @@ function restoreCard() {
                     el('a', { class: 'btn-light', href: '/api/export/json' }, 'Download current data first')));
         });
     });
+    return card;
+}
+
+async function cleanupCard() {
+    const body = el('div');
+    const card = el('div', { class: 'card' },
+        el('h2', {}, 'Clean up'),
+        el('p', { class: 'muted', style: { marginBottom: '12px' } },
+            'Start over with rules or subscriptions. Your transactions are not deleted, and they keep their categories.'),
+        body);
+
+    const load = async () => {
+        const [rules, series] = await Promise.all([api('/rules'), api('/recurring')]);
+        const row = (title, hint, count, noun, path) => {
+            const btn = el('button', { class: 'btn-danger btn-sm', disabled: count === 0 }, `Delete all ${noun}`);
+            btn.addEventListener('click', async () => {
+                const ok = await confirmDialog(`Delete all ${count} ${noun}? This cannot be undone.`,
+                    { danger: true, confirmLabel: `Delete all ${noun}`, requireText: 'DELETE' });
+                if (!ok) return;
+                await run(btn, async () => {
+                    const r = await api(path, { method: 'DELETE', query: { confirm: 'DELETE' } });
+                    toast(`Deleted ${plural(r.deleted, noun.replace(/s$/, ''), noun)}`);
+                    await load();
+                });
+            });
+            return el('div', { class: 'spread', style: { padding: '12px 0', borderTop: '1px solid var(--border)', marginBottom: 0 } },
+                el('div', {}, el('strong', {}, title), el('span', { class: 'muted' }, ` · ${count}`),
+                    el('div', { class: 'muted small' }, hint)),
+                btn);
+        };
+        body.replaceChildren(
+            row('Auto-categorization rules', 'New imports are no longer categorized automatically until you add rules again.',
+                rules.length, 'rules', '/rules'),
+            row('Subscriptions & recurring payments', 'Includes kept and dismissed ones. The next import or “Scan again” suggests them again from your transactions.',
+                series.length, 'subscriptions', '/recurring'));
+    };
+    await load();
     return card;
 }

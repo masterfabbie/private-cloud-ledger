@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app import models, schemas
@@ -25,6 +25,21 @@ def list_series(db: Session = Depends(get_db), user: models.User = Depends(get_c
         .order_by(models.RecurringSeries.next_date)
     )
     return [_out(s) for s in series]
+
+
+@router.delete("")
+def delete_all_series(
+    confirm: str = Query(..., description="Must be 'DELETE'"),
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Delete all subscriptions/recurring series, including kept and dismissed ones.
+    Transactions are not touched; the next import or scan suggests series again."""
+    if confirm != "DELETE":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Pass confirm=DELETE")
+    result = db.execute(delete(models.RecurringSeries).where(models.RecurringSeries.user_id == user.id))
+    db.commit()
+    return {"deleted": result.rowcount}
 
 
 @router.post("/scan", response_model=list[schemas.RecurringOut])

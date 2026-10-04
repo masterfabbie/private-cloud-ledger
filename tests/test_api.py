@@ -240,3 +240,38 @@ def test_rule_preview_and_apply(admin):
     assert items["2025-05-01"]["tags"] == ["groceries"]
     assert items["2025-05-10"]["category_name"] is None  # income is excluded by the rule
     assert admin.post(f"/api/rules/{rule['id']}/apply").json()["updated"] == 0  # idempotent
+
+
+def test_delete_all_rules_and_subscriptions(admin, client, db):
+    from datetime import date
+
+    from app import models
+
+    acc = admin.get("/api/accounts").json()[0]
+    cats = {c["name"]: c["id"] for c in admin.get("/api/categories").json()}
+    for p in ("REWE", "Lidl", "Aldi"):
+        admin.post("/api/rules", json={"pattern": p, "category_id": cats["Food & Dining"]})
+    tx = admin.post("/api/transactions", json={"account_id": acc["id"], "booking_date": "2025-05-01", "amount_cents": -500,
+                                               "description": "Einkauf", "payer": "REWE", "category_id": cats["Food & Dining"]}).json()
+    me = admin.get("/api/auth/me").json()
+    for i, status in enumerate(("detected", "confirmed", "dismissed")):
+        db.add(models.RecurringSeries(user_id=me["id"], payer_key=f"-s{i}", display_name=f"S{i}", typical_amount_cents=-999,
+                                      interval_days=30, last_date=date(2025, 5, 1), next_date=date(2025, 6, 1), status=status))
+    db.commit()
+
+    # Another user's data must survive.
+    admin.post("/api/admin/users", json={"username": "other", "password": "password123"})
+    other = login(TestClient(client.app), "other", "password123")
+    other_cat = other.get("/api/categories").json()[0]["id"]
+    other.post("/api/rules", json={"pattern": "x", "category_id": other_cat})
+
+    assert admin.delete("/api/rules", params={"confirm": "nope"}).status_code == 400
+    assert admin.delete("/api/rules", params={"confirm": "DELETE"}).json() == {"deleted": 3}
+    assert admin.get("/api/rules").json() == []
+    assert len(other.get("/api/rules").json()) == 1
+    # Transactions keep their categories.
+    assert admin.get("/api/transactions").json()["items"][0]["category_name"] == "Food & Dining"
+
+    assert admin.delete("/api/recurring", params={"confirm": "DELETE"}).json() == {"deleted": 3}
+    assert admin.get("/api/recurring").json() == []
+    assert admin.get("/api/transactions").json()["total"] == 1 and tx["id"]

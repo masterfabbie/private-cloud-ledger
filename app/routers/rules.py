@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app import models, schemas
@@ -45,6 +45,20 @@ def update_rule(
         setattr(rule, k, v)
     db.commit()
     return rule
+
+
+@router.delete("")
+def delete_all_rules(
+    confirm: str = Query(..., description="Must be 'DELETE'"),
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Delete all of the user's rules. Categories of existing transactions stay as they are."""
+    if confirm != "DELETE":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Pass confirm=DELETE")
+    result = db.execute(delete(models.Rule).where(models.Rule.user_id == user.id))
+    db.commit()
+    return {"deleted": result.rowcount}
 
 
 @router.delete("/{rule_id}", status_code=204)
