@@ -1,6 +1,6 @@
 [project]
 name = "proud-ledger"
-version = "2.2.0"
+version = "2.3.0"
 description = "Proud Ledger - private cloud ledger: self-hosted finance tracker with bank CSV import"
 requires-python = ">=3.11"
 dependencies = [
