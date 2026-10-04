@@ -122,3 +122,25 @@ def rerun_rules(db: Session, user_id: int, only_uncategorized: bool = True) -> i
             changed += 1
     db.commit()
     return changed
+
+
+def matching_transactions(db: Session, user_id: int, rule: models.Rule) -> list[models.Transaction]:
+    """All of the user's transactions the rule matches, newest first (rule may be unsaved)."""
+    txs = db.scalars(
+        select(models.Transaction)
+        .where(models.Transaction.user_id == user_id)
+        .order_by(models.Transaction.booking_date.desc(), models.Transaction.id.desc())
+    ).unique()
+    return [t for t in txs if rule_matches(rule, t.description, t.payer, t.counterparty_iban, t.amount_cents)]
+
+
+def apply_rule_everywhere(db: Session, rule: models.Rule) -> int:
+    """Apply a rule to every matching transaction, whatever its current category."""
+    changed = 0
+    for tx in matching_transactions(db, rule.user_id, rule):
+        before = (tx.category_id, {t.name for t in tx.tags})
+        apply_rule_to(db, rule, tx)
+        if (tx.category_id, {t.name for t in tx.tags}) != before:
+            changed += 1
+    db.commit()
+    return changed

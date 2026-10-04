@@ -53,6 +53,57 @@ def delete_rule(rule_id: int, db: Session = Depends(get_db), user: models.User =
     db.commit()
 
 
+@router.post("/preview")
+def preview(data: schemas.RulePreviewIn, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    """Which existing transactions a rule (as currently edited) would match."""
+    try:
+        rule_service.validate_rule(
+            data.field, data.match, data.pattern, data.amount_sign, data.amount_min_cents, data.amount_max_cents
+        )
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    draft = models.Rule(
+        user_id=user.id, **data.model_dump(exclude={"rule_id", "category_id", "priority"}), add_tags=[],
+        category_id=data.category_id, priority=data.priority,
+    )
+    matches = rule_service.matching_transactions(db, user.id, draft)
+    # Rules that run before this one win at import time; count the matches they would send
+    # to a different category.
+    earlier = [
+        r for r in rule_service.load_rules(db, user.id)
+        if r.id != data.rule_id and (r.priority, r.id) < (data.priority, data.rule_id or 10**9)
+    ]
+    taken = 0
+    for t in matches:
+        winner = rule_service.first_match(earlier, t.description, t.payer, t.counterparty_iban, t.amount_cents)
+        if winner is not None and winner.category_id != data.category_id:
+            taken += 1
+    return {
+        "matches": len(matches),
+        "already_in_category": sum(1 for t in matches if data.category_id and t.category_id == data.category_id),
+        "taken_by_earlier_rules": taken,
+        "sample": [
+            {
+                "id": t.id,
+                "booking_date": t.booking_date.isoformat(),
+                "description": t.description,
+                "payer": t.payer,
+                "amount_cents": t.amount_cents,
+                "category_name": t.category.name if t.category else None,
+                "category_color": t.category.color if t.category else None,
+            }
+            for t in matches[:10]
+        ],
+    }
+
+
+@router.post("/{rule_id}/apply")
+def apply_rule(rule_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    """Set this rule's category (and tags) on every transaction it matches."""
+    rule = owned(db, models.Rule, rule_id, user)
+    return {"updated": rule_service.apply_rule_everywhere(db, rule)}
+
+
 @router.post("/rerun")
 def rerun(all_transactions: bool = False, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     return {"updated": rule_service.rerun_rules(db, user.id, only_uncategorized=not all_transactions)}

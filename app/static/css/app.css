@@ -300,6 +300,13 @@ table.data td.num, table.data th.num { text-align: right; white-space: nowrap; }
     display: flex; align-items: center; justify-content: center; z-index: 900; padding: 16px;
 }
 .modal { background: white; border-radius: 15px; padding: 25px; width: 520px; max-width: 100%; max-height: 90vh; overflow: auto; }
+.modal-wide { width: 1080px; }
+.rule-editor { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 28px; align-items: start; }
+@media (max-width: 900px) { .rule-editor { grid-template-columns: 1fr; } }
+.rule-preview { margin: 4px 0 16px; padding: 14px 16px; background: var(--soft); border: 1px solid var(--border); border-radius: 10px; }
+.rule-preview .summary { font-size: 0.9rem; margin-bottom: 8px; }
+.rule-preview .table-wrap { max-height: 360px; margin-top: 8px; background: var(--card); }
+.rule-preview table.data { font-size: 0.82rem; }
 .modal .actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 10px; }
 
 /* login */

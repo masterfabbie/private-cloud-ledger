@@ -201,3 +201,42 @@ def test_rule_validation(admin):
     r = admin.post("/api/rules", json={"pattern": "x", "amount_min_cents": 500, "amount_max_cents": 100, "category_id": cat})
     assert r.status_code == 400 and "lower amount" in r.json()["detail"]
     assert admin.post("/api/rules", json={"pattern": "x", "amount_min_cents": -1, "category_id": cat}).status_code == 422
+
+
+def test_rule_preview_and_apply(admin):
+    acc = admin.get("/api/accounts").json()[0]
+    cats = {c["name"]: c["id"] for c in admin.get("/api/categories").json()}
+    for d, amount, payer in (("2025-05-01", -2000, "REWE"), ("2025-05-08", -9000, "REWE"),
+                             ("2025-05-09", -1500, "Lidl"), ("2025-05-10", 500, "REWE")):
+        admin.post("/api/transactions", json={"account_id": acc["id"], "booking_date": d, "amount_cents": amount,
+                                              "payer": payer, "description": "Einkauf",
+                                              "category_id": cats["Shopping"] if amount == -9000 else None})
+    draft = {"field": "payer", "pattern": "rewe", "amount_sign": "expense", "category_id": cats["Food & Dining"]}
+    p = admin.post("/api/rules/preview", json=draft).json()
+    assert p["matches"] == 2 and p["already_in_category"] == 0 and p["taken_by_earlier_rules"] == 0
+    assert [t["booking_date"] for t in p["sample"]] == ["2025-05-08", "2025-05-01"]  # newest first
+    assert p["sample"][0]["category_name"] == "Shopping"
+
+    # Nothing is saved by a preview.
+    assert admin.get("/api/rules").json() == []
+    # Invalid input is reported, not raised.
+    bad = admin.post("/api/rules/preview", json={"pattern": "(", "match": "regex"})
+    assert bad.status_code == 400 and "regular expression" in bad.json()["detail"]
+
+    # An earlier (lower priority number) rule that also matches is reported.
+    admin.post("/api/rules", json={"field": "payer", "pattern": "REWE", "amount_min_cents": 5000,
+                                   "category_id": cats["Shopping"], "priority": 10})
+    p = admin.post("/api/rules/preview", json={**draft, "priority": 100}).json()
+    assert p["taken_by_earlier_rules"] == 1
+    # An earlier rule that leads to the same category is not a conflict.
+    same = admin.post("/api/rules/preview", json={**draft, "category_id": cats["Shopping"]}).json()
+    assert same["taken_by_earlier_rules"] == 0
+
+    # Save and apply to every match, including the one already in another category.
+    rule = admin.post("/api/rules", json={**draft, "add_tags": ["groceries"]}).json()
+    assert admin.post(f"/api/rules/{rule['id']}/apply").json()["updated"] == 2
+    items = {t["booking_date"]: t for t in admin.get("/api/transactions").json()["items"]}
+    assert items["2025-05-08"]["category_name"] == items["2025-05-01"]["category_name"] == "Food & Dining"
+    assert items["2025-05-01"]["tags"] == ["groceries"]
+    assert items["2025-05-10"]["category_name"] is None  # income is excluded by the rule
+    assert admin.post(f"/api/rules/{rule['id']}/apply").json()["updated"] == 0  # idempotent

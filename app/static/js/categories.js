@@ -1,6 +1,6 @@
 import {
-    api, categoryById, categoryOptions, centsToInput, clear, confirmDialog, el, fmtMoney, loadRefs, modal, options,
-    parseMoney, run, state, toast,
+    api, categoryById, categoryOptions, centsToInput, clear, confirmDialog, el, fmtDate, fmtMoney, fmtSigned, loadRefs,
+    modal, options, parseMoney, run, state, toast,
 } from './api.js';
 
 const KINDS = [['expense', 'Expense'], ['income', 'Income'], ['transfer', 'Transfer (excluded from totals)']];
@@ -157,42 +157,106 @@ function editRule(r) {
         const priority = el('input', { type: 'number', value: r?.priority ?? 100 });
         const save = el('button', { class: 'btn', type: 'submit' }, 'Save');
         const g = (l, i) => el('div', { class: 'form-group' }, el('label', {}, l), i);
-        return el('form', { onsubmit: e => {
-            e.preventDefault();
+        const applyNow = el('input', { type: 'checkbox' });
+        const applyLabel = el('span', {}, 'Also apply to matching transactions now');
+        const previewBox = el('div', { class: 'rule-preview' });
+
+        /** The rule as currently entered, or an error message. */
+        const collect = () => {
             let lo = null, hi = null;
             if (op.value !== 'any') {
                 const a = Math.abs(parseMoney(amountA.value));
                 const b = Math.abs(parseMoney(amountB.value));
-                if (Number.isNaN(a) || (op.value === 'between' && Number.isNaN(b))) {
-                    toast('Please enter a valid amount', { error: true });
-                    return;
-                }
+                if (Number.isNaN(a) || (op.value === 'between' && Number.isNaN(b))) return { error: 'Please enter a valid amount' };
                 if (op.value === 'eq') lo = hi = a;
                 else if (op.value === 'min') lo = a;
                 else if (op.value === 'max') hi = a;
                 else [lo, hi] = [Math.min(a, b), Math.max(a, b)];
             }
-            if (!pattern.value.trim() && op.value === 'any') {
-                toast('Enter a text to match, an amount, or both', { error: true });
-                return;
-            }
-            const body = {
+            if (!pattern.value.trim() && op.value === 'any') return { error: 'Enter a text to match, an amount, or both' };
+            return { body: {
                 amount_min_cents: lo, amount_max_cents: hi,
                 field: field.value, match: match.value, pattern: pattern.value.trim(), amount_sign: sign.value,
                 category_id: Number(category.value), priority: Number(priority.value) || 100,
                 add_tags: tags.value.split(',').map(t => t.trim().toLowerCase()).filter(Boolean),
-            };
+            } };
+        };
+
+        let previewTimer, previewSeq = 0;
+        const refreshPreview = () => {
+            clearTimeout(previewTimer);
+            previewTimer = setTimeout(async () => {
+                const seq = ++previewSeq;
+                const { body, error } = collect();
+                if (error) {
+                    previewBox.replaceChildren(el('div', { class: 'muted small' }, `${error} to see which transactions it matches.`));
+                    applyLabel.textContent = 'Also apply to matching transactions now';
+                    return;
+                }
+                let p;
+                try {
+                    p = await api('/rules/preview', { method: 'POST', body: { ...body, rule_id: r?.id ?? null, category_id: body.category_id || null } });
+                } catch (e) {
+                    if (seq === previewSeq) previewBox.replaceChildren(el('div', { class: 'small neg' }, e.message));
+                    return;
+                }
+                if (seq !== previewSeq) return; // a newer preview is on its way
+                const cat = categoryById(body.category_id);
+                const toChange = p.matches - p.already_in_category;
+                applyLabel.textContent = cat
+                    ? `Also apply to the ${p.matches} matching transactions now (${toChange} would change to ${cat.name})`
+                    : `Also apply to the ${p.matches} matching transactions now`;
+                const parts = [el('strong', {}, p.matches === 1 ? 'Matches 1 transaction' : `Matches ${p.matches} transactions`)];
+                if (cat && p.matches) parts.push(` · ${p.already_in_category} already in ${cat.name}`);
+                if (p.taken_by_earlier_rules) {
+                    parts.push(el('span', { class: 'neg', title: 'Rules with a lower priority number run first; the first match wins on import' },
+                        ` · ${p.taken_by_earlier_rules} also match an earlier rule with a different category, which wins on import`));
+                }
+                previewBox.replaceChildren(...[
+                    el('div', { class: 'summary' }, parts),
+                    p.sample.length ? el('div', { class: 'table-wrap' }, el('table', { class: 'data' },
+                        el('tbody', {}, p.sample.map(t => el('tr', {},
+                            el('td', {}, fmtDate(t.booking_date)),
+                            el('td', {}, t.description, t.payer ? el('div', { class: 'muted' }, t.payer) : null),
+                            el('td', {}, t.category_name
+                                ? [el('span', { class: 'dot', style: { background: t.category_color, marginRight: '6px' } }), t.category_name]
+                                : el('span', { class: 'muted' }, 'Uncategorized')),
+                            el('td', { class: `num ${t.amount_cents < 0 ? 'neg' : 'pos'}` }, fmtSigned(t.amount_cents))))))) : null,
+                    p.matches > p.sample.length ? el('div', { class: 'muted small', style: { marginTop: '6px' } }, `Showing the newest ${p.sample.length}.`) : null,
+                ].filter(Boolean));
+            }, 300);
+        };
+        for (const input of [field, match, pattern, sign, op, amountA, amountB, category, priority]) {
+            input.addEventListener('input', refreshPreview);
+            input.addEventListener('change', refreshPreview);
+        }
+        refreshPreview();
+
+        return el('form', { onsubmit: e => {
+            e.preventDefault();
+            const { body, error } = collect();
+            if (error) { toast(error, { error: true }); return; }
             run(save, async () => {
-                await api(r ? `/rules/${r.id}` : '/rules', { method: r ? 'PUT' : 'POST', body });
+                const saved = await api(r ? `/rules/${r.id}` : '/rules', { method: r ? 'PUT' : 'POST', body });
+                if (applyNow.checked) {
+                    const res = await api(`/rules/${saved.id}/apply`, { method: 'POST' });
+                    toast(`Rule saved and applied: ${res.updated} transactions updated`);
+                }
                 close(true);
             });
         } },
-        el('div', { class: 'grid-2', style: { gap: '0 16px' } }, g('Field', field), g('Match', match)),
-        g('Text (case-insensitive, optional when an amount is set)', pattern),
-        g('Amount (without sign)', el('div', { class: 'row' }, op, el('div', { class: 'grow' }, amountA), andLabel, el('div', { class: 'grow' }, amountB))),
-        el('div', { class: 'grid-2', style: { gap: '0 16px' } }, g('Applies to', sign), g('Priority (lower runs first)', priority)),
-        g('Set category', category),
-        g('Add tags', tags),
+        el('div', { class: 'rule-editor' },
+            el('div', {},
+                el('div', { class: 'grid-2', style: { gap: '0 16px' } }, g('Field', field), g('Match', match)),
+                g('Text (case-insensitive, optional when an amount is set)', pattern),
+                g('Amount (without sign)', el('div', { class: 'row' }, op, el('div', { class: 'grow' }, amountA), andLabel, el('div', { class: 'grow' }, amountB))),
+                el('div', { class: 'grid-2', style: { gap: '0 16px' } }, g('Applies to', sign), g('Priority (lower runs first)', priority)),
+                g('Set category', category),
+                g('Add tags', tags)),
+            el('div', {},
+                el('label', {}, 'Preview'),
+                previewBox,
+                el('label', { class: 'inline-label' }, applyNow, applyLabel))),
         el('div', { class: 'actions' }, el('button', { type: 'button', class: 'btn-light', onclick: () => close(false) }, 'Cancel'), save));
-    });
+    }, { wide: true });
 }

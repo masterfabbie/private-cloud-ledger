@@ -195,10 +195,10 @@ export function showError(err) {
 }
 
 /** Simple modal. `build(close)` returns the content node. Resolves when closed. */
-export function modal(title, build) {
+export function modal(title, build, { wide = false } = {}) {
     return new Promise(resolve => {
         const close = value => { backdrop.remove(); resolve(value); };
-        const box = el('div', { class: 'modal' }, el('h2', {}, title));
+        const box = el('div', { class: wide ? 'modal modal-wide' : 'modal' }, el('h2', {}, title));
         const backdrop = el('div', { class: 'modal-backdrop', onclick: e => { if (e.target === backdrop) close(); } }, box);
         box.append(build(close));
         document.body.append(backdrop);

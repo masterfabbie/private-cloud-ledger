@@ -1,4 +1,4 @@
-import { api, applyTheme, el, getTheme, run, state, THEMES, toast } from './api.js';
+import { api, applyTheme, confirmDialog, el, fmtDate, getTheme, loadRefs, run, state, THEMES, toast } from './api.js';
 
 export async function render(root) {
     const current = el('input', { type: 'password', autocomplete: 'current-password', required: true });
@@ -47,4 +47,73 @@ export async function render(root) {
                 el('a', { class: 'btn', href: '/api/export/json' }, 'Download JSON backup'),
                 el('a', { class: 'btn-light', href: '/api/export/xlsx' }, 'All transactions (Excel)'),
                 el('a', { class: 'btn-light', href: '/api/export/csv' }, 'All transactions (CSV)')))));
+    root.append(restoreCard());
+}
+
+const plural = (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`;
+
+const COUNT_LABELS = [
+    ['accounts', 'accounts'], ['categories', 'categories'], ['transactions', 'transactions'],
+    ['rules', 'rules'], ['budgets', 'budgets'], ['recurring', 'subscriptions'],
+];
+
+function restoreCard() {
+    const fileInput = el('input', { type: 'file', accept: '.json,application/json', id: 'restoreFile' });
+    const result = el('div');
+    const card = el('div', { class: 'card' },
+        el('h2', {}, 'Restore from backup'),
+        el('p', { class: 'muted', style: { marginBottom: '12px' } },
+            'Load a JSON backup downloaded above, for example to move to a new server. ',
+            'This replaces all of your accounts, categories, transactions, rules, budgets and subscriptions. ',
+            'Other users are not affected. Saved CSV column settings are not part of the backup.'),
+        el('div', { class: 'form-group' }, el('label', { for: 'restoreFile' }, 'Backup file'), fileInput),
+        result);
+
+    const upload = (dryRun) => {
+        const form = new FormData();
+        form.append('file', fileInput.files[0]);
+        return api('/export/restore', { method: 'POST', form, query: { dry_run: dryRun } });
+    };
+
+    fileInput.addEventListener('change', () => {
+        result.replaceChildren();
+        if (!fileInput.files[0]) return;
+        run(null, async () => {
+            let check;
+            try {
+                check = await upload(true);
+            } catch (e) {
+                result.replaceChildren(el('div', { class: 'status error' }, e.message));
+                return;
+            }
+            const b = check.backup, cur = check.current;
+            const restoreBtn = el('button', { class: 'btn-danger' }, 'Replace my data with this backup');
+            restoreBtn.addEventListener('click', async () => {
+                const ok = await confirmDialog(
+                    `Replace your ${cur.transactions} transactions and all other data with the ${b.transactions} transactions from this backup? `
+                    + 'Download a backup of your current data first if you might need it.',
+                    { danger: true, confirmLabel: 'Restore', requireText: 'RESTORE' });
+                if (!ok) return;
+                await run(restoreBtn, async () => {
+                    await upload(false);
+                    await loadRefs();
+                    result.replaceChildren(el('div', { class: 'status success' },
+                        `Restored ${plural(b.transactions, 'transaction')}, ${plural(b.accounts, 'account')} and ${plural(b.categories, 'category', 'categories')}.`));
+                    fileInput.value = '';
+                    toast('Backup restored');
+                });
+            });
+            result.replaceChildren(
+                el('div', { class: 'status info' },
+                    'Backup', b.username ? ` of “${b.username}”` : '', b.exported_at ? ` from ${fmtDate(b.exported_at)}` : '', ' is valid.'),
+                el('table', { class: 'data', style: { margin: '12px 0', maxWidth: '520px' } },
+                    el('thead', {}, el('tr', {}, el('th', {}, 'Contents'), el('th', { class: 'num' }, 'In the backup'), el('th', { class: 'num' }, 'Your data now'))),
+                    el('tbody', {}, COUNT_LABELS.map(([key, label]) => el('tr', {},
+                        el('td', {}, label), el('td', { class: 'num' }, b[key]), el('td', { class: 'num' }, cur[key]))))),
+                el('div', { class: 'row' },
+                    restoreBtn,
+                    el('a', { class: 'btn-light', href: '/api/export/json' }, 'Download current data first')));
+        });
+    });
+    return card;
 }

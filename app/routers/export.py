@@ -4,7 +4,7 @@ import json
 from calendar import month_name
 from datetime import date
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
 from openpyxl import Workbook
 from sqlalchemy import select
@@ -12,7 +12,9 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.auth import get_current_user
+from app.config import get_settings
 from app.db import get_db
+from app.services import backup
 from app.services.queries import TxFilters, filtered_transactions, tx_filters
 
 router = APIRouter(prefix="/api/export", tags=["export"])
@@ -96,31 +98,37 @@ def export_xlsx(f: TxFilters = Depends(tx_filters), db: Session = Depends(get_db
 
 @router.get("/json")
 def export_json(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
-    """Full backup of the current user's data."""
-
-    def dump(model, **extra):
-        cols = [c.name for c in model.__table__.columns if c.name not in ("user_id", "password_hash")]
-        out = []
-        for obj in db.scalars(select(model).where(model.user_id == user.id)):
-            row = {c: getattr(obj, c) for c in cols}
-            row.update({k: fn(obj) for k, fn in extra.items()})
-            out.append(row)
-        return out
-
-    data = {
-        "version": 1,
-        "exported_at": date.today().isoformat(),
-        "username": user.username,
-        "accounts": dump(models.Account),
-        "categories": dump(models.Category),
-        "transactions": dump(models.Transaction, tags=lambda t: sorted(tag.name for tag in t.tags)),
-        "rules": dump(models.Rule),
-        "budgets": dump(models.Budget),
-        "recurring": dump(models.RecurringSeries),
-    }
-    body =json.dumps(data, default=str, ensure_ascii=False, indent=1)
+    """Full backup of the current user's data (restore it on the Settings page)."""
+    body = json.dumps(backup.export_data(db, user), default=str, ensure_ascii=False, indent=1)
     return Response(
         body,
         media_type="application/json",
         headers={"Content-Disposition": f'attachment; filename="proud-ledger_backup_{date.today().isoformat()}.json"'},
     )
+
+
+@router.post("/restore", tags=["backup"])
+async def restore_backup(
+    file: UploadFile = File(...),
+    dry_run: bool = False,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Check a backup file (dry_run=true) or replace all of the user's data with it."""
+    limit = max(50, get_settings().max_upload_mb) * 1024 * 1024
+    raw = await file.read(limit + 1)
+    if len(raw) > limit:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "The backup file is too large")
+    try:
+        data = json.loads(raw.decode("utf-8-sig"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "This is not a Proud Ledger backup file (not valid JSON).") from exc
+    try:
+        bk = backup.parse_backup(data)
+    except backup.BackupError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    result = {"backup": backup.summarize(bk), "current": backup.current_counts(db, user.id), "restored": False}
+    if not dry_run:
+        backup.restore(db, user, bk)
+        result["restored"] = True
+    return result

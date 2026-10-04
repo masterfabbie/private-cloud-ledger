@@ -23,7 +23,8 @@ It replaces the old single-file version, which is kept at `legacy/financetracker
 - **Undo** for a whole import from the import history.
 - **Multiple accounts** with opening balances, a balance-over-time chart, and automatic detection of transfers between your own accounts.
 - **Categories** with colours, and **rules** for auto-categorization:
-  - A rule can match on payer, description or IBAN, using contains, equals or regex.
+  - A rule can match on payer, description or IBAN, using contains, equals or regex, and on the amount (exactly, between, at least or at most). Either part can be used alone.
+  - While you edit a rule, a live preview shows which transactions it matches and warns when an earlier rule would assign them to a different category. One checkbox applies the rule to those transactions right away.
   - When you change a category in the list, the app offers to create a rule and apply it to similar transactions.
 - **Budgets** per category per month, with progress bars and over-budget warnings.
 - **Subscriptions and recurring payments:**
@@ -37,7 +38,7 @@ It replaces the old single-file version, which is kept at `legacy/financetracker
   - A balance chart.
   - Filters for account, year and month.
 - **Transactions:** search, filters, inline category editing, tags, notes, manual entry and pagination.
-- **Export** to CSV (semicolon-separated with comma decimals, like the old version), to Excel (`.xlsx`), and as a full JSON backup.
+- **Export** to CSV (semicolon-separated with comma decimals, like the old version), to Excel (`.xlsx`), and as a full JSON backup that can be **restored** under Settings.
 - **Single sign-on** with authentik or any other OpenID Connect provider. Users are created on first login, and admin rights can follow a group.
 - **User management:**
   - The admin creates, deactivates, promotes and deletes users and resets passwords.
@@ -153,7 +154,11 @@ docker compose exec app sqlite3 /data/finance.db ".backup /data/backup.db"
 docker compose cp app:/data/backup.db ./finance-backup.db
 ```
 
-Each user can also download a JSON backup of their own data under **Settings**.
+Each user can also download a JSON backup of their own data under **Settings**, and restore it there with **Restore from backup**. A restore works like this:
+- **Check first:** the file is checked completely before anything changes, and you see how many accounts, transactions and other items it contains compared with your current data.
+- **Replace:** restoring replaces all of your own data. Other users are not affected.
+- **New server or user:** this is also how you move your data to a new server or another user account. Log in as the target user and restore the file there.
+- **Not included:** saved CSV column settings are not part of the backup.
 
 ### Updating
 

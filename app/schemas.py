@@ -170,6 +170,20 @@ class RuleIn(BaseModel):
     priority: int = 100
 
 
+class RulePreviewIn(BaseModel):
+    """A rule as edited in the form, evaluated without saving it."""
+
+    rule_id: int | None = None  # the rule being edited, so it is not compared with itself
+    field: str = "payer"
+    match: str = "contains"
+    pattern: str = Field("", max_length=255)
+    amount_sign: str = "any"
+    amount_min_cents: int | None = Field(None, ge=0)
+    amount_max_cents: int | None = Field(None, ge=0)
+    category_id: int | None = None
+    priority: int = 100
+
+
 class RuleOut(ORM):
     id: int
     field: str
