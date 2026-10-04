@@ -166,7 +166,7 @@ Each user can also download a JSON backup of their own data under **Settings**, 
 APP_COMMIT=$(git rev-parse --short HEAD) docker compose up -d --build   # migrations run automatically on start
 ```
 
-The version and commit are shown at the bottom of every page, for example `Proud Ledger v2.1.0 · bc948ae`. The version comes from `pyproject.toml`. The commit comes from the `APP_COMMIT` build argument, and is left out when the argument isn't set. When you build the image yourself, use `docker build --build-arg APP_COMMIT=$(git rev-parse --short HEAD) -t <user>/proud-ledger .`
+The version and commit are shown at the bottom of every page, for example `Proud Ledger v2.2.0 · b3dff2e`. The version comes from `pyproject.toml`. The commit comes from the `APP_COMMIT` build argument, and is left out when the argument isn't set. When you build the image yourself, use `docker build --build-arg APP_COMMIT=$(git rev-parse --short HEAD) -t <user>/proud-ledger .`
 
 ## Development
 
