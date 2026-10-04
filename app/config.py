@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     oidc_admin_group: str = ""  # members become admins; when empty, admin rights are managed in the app
     oidc_link_existing_users: bool = False  # attach SSO logins to local users with the same username
 
+    # Bank sync via FinTS/HBCI. The product ID is the registration number from the
+    # Deutsche Kreditwirtschaft (free, apply at https://www.fints.org).
+    fints_product_id: str = ""
+    bank_sync_interval_hours: int = 6  # automatic sync for connections with a stored PIN; 0 = off
+
     @property
     def oidc_enabled(self) -> bool:
         return bool(self.oidc_issuer_url and self.oidc_client_id)

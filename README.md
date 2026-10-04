@@ -39,6 +39,7 @@ It replaces the old single-file version, which is kept at `legacy/financetracker
   - Filters for account, year and month.
 - **Transactions:** search, filters, inline category editing, tags, notes, manual entry and pagination.
 - **Export** to CSV (semicolon-separated with comma decimals, like the old version), to Excel (`.xlsx`), and as a full JSON backup that can be **restored** under Settings.
+- **Bank sync via FinTS/HBCI.** Fetch transactions directly from German banks such as Sparkassen, Volksbanken, DKB, ING and comdirect, including pushTAN app confirmation. Sync manually or automatically every few hours.
 - **Single sign-on** with authentik or any other OpenID Connect provider. Users are created on first login, and admin rights can follow a group.
 - **User management:**
   - The admin creates, deactivates, promotes and deletes users and resets passwords.
@@ -100,6 +101,8 @@ The data lives in the Docker volume `ft-data`, in the file `/data/finance.db` in
 | `PUBLIC_URL` | – | Public address, e.g. `https://ledger.example.com` (needed for SSO behind a proxy) |
 | `PASSWORD_LOGIN` | `true` | Allow username/password login |
 | `OIDC_*` | – | Single sign-on, see below |
+| `FINTS_PRODUCT_ID` | – | FinTS product registration number; enables bank sync |
+| `BANK_SYNC_INTERVAL_HOURS` | `6` | Automatic bank sync interval; `0` turns it off |
 
 ### Single sign-on (authentik and other OIDC providers)
 
@@ -133,6 +136,29 @@ The login page then shows a **Log in with authentik** button. How users are hand
 For another provider, use its issuer URL, the one whose `/.well-known/openid-configuration` exists. Adjust `OIDC_USERNAME_CLAIM` and `OIDC_GROUPS_CLAIM` if the provider names those claims differently. For example, Keycloak needs a "groups" mapper.
 
 Log out in Proud Ledger ends only the Proud Ledger session, not your authentik session.
+
+### Bank sync (FinTS/HBCI)
+
+Proud Ledger can fetch transactions directly from banks that offer FinTS with PIN/TAN. That includes most Sparkassen and Volks- und Raiffeisenbanken, as well as DKB, ING, comdirect, Consorsbank and many others. Many app-only banks such as N26 don't offer FinTS; keep using CSV import for those.
+
+**Setup (once per server):**
+1. Apply for a **FinTS product registration** with the Deutsche Kreditwirtschaft. It's free; see [fints.org](https://www.fints.org) and the registration form at [hbci-zka.de](https://www.hbci-zka.de/register/prod_register.htm). Banks may reject unregistered software.
+2. Put the number in `.env` as `FINTS_PRODUCT_ID`.
+3. To allow stored PINs and automatic sync, also set `SECRET_KEY`, a long random string. Stored PINs are encrypted with it, so keep it secret and don't change it, or stored PINs have to be entered again.
+
+**Connecting a bank** is done on the **Accounts** page with **Connect a bank**:
+- **What to enter:** bank code (BLZ), online-banking login name, the bank's FinTS server address and your PIN. Your bank lists the server address in its online-banking help; Sparkassen use addresses like `https://banking-xx….de/fints30`.
+- **TAN method:** chosen once on the first connection, e.g. **pushTAN** for the S-pushTAN app. When the bank asks for a confirmation, the dialog waits until you confirm in the app. TANs you type in (chipTAN manuell, SMS) and photoTAN images are supported too. Optical flicker codes are not.
+- **Linking accounts:** link each bank account to a Proud Ledger account, or create a new one. **Sync from** starts the day after your newest existing transaction, so CSV history and bank sync don't overlap. For an empty account it starts 90 days back. Going further back usually needs a TAN.
+
+**Automatic sync:**
+- **Turning it on:** store the PIN and tick **Sync automatically**. Synced connections are then checked every `BANK_SYNC_INTERVAL_HOURS`.
+- **When the bank asks for a TAN:** many banks only ask for one every 90 days for reading transactions. When they do, the automatic sync stops and the connection shows **Needs your confirmation** until you click **Sync now**.
+- **Wrong PIN:** if the bank rejects the PIN, the stored PIN is deleted and automatic sync turned off immediately, so retries can't lock your online banking.
+
+What else to know:
+- **Duplicates:** synced transactions go through the same duplicate detection, rules, transfer detection and subscription detection as CSV imports. Each sync appears in the import history and can be undone there.
+- **Credentials and backups:** bank credentials are never part of the JSON backup.
 
 ### HTTPS / reverse proxy
 

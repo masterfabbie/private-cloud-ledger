@@ -1,4 +1,5 @@
 import { api, centsToInput, clear, confirmDialog, el, fmtMoney, loadRefs, modal, parseMoney, run, state } from './api.js';
+import { bankSection } from './bank.js';
 
 export async function render(root) {
     const list = el('div');
@@ -10,6 +11,7 @@ export async function render(root) {
             'automatically and left out of income and expense totals.'),
         list));
     await load(list);
+    root.append(await bankSection(() => load(list)));
 }
 
 async function load(list) {

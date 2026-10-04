@@ -10,10 +10,13 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.auth import ensure_admin
 from app.config import get_settings
 from app.version import APP_NAME, app_commit, app_version
+from app import db as db_module
 from app.db import SessionLocal
+from app.services import banksync
 from app.routers import (
     accounts,
     auth,
+    bank,
     budgets,
     categories,
     export,
@@ -32,7 +35,10 @@ STATIC_DIR = Path(__file__).parent / "static"
 async def lifespan(_app: FastAPI):
     with SessionLocal() as db:
         ensure_admin(db)
+    stop_scheduler = banksync.start_scheduler(lambda: db_module.SessionLocal())
     yield
+    if stop_scheduler:
+        stop_scheduler.set()
 
 
 app = FastAPI(title=APP_NAME, version=app_version(), lifespan=lifespan, docs_url="/api/docs", openapi_url="/api/openapi.json")
@@ -48,7 +54,7 @@ app.add_middleware(
     https_only=_settings.cookie_secure,
 )
 
-for r in (auth, users, accounts, categories, transactions, imports, rules, budgets, recurring, stats, export):
+for r in (auth, users, accounts, bank, categories, transactions, imports, rules, budgets, recurring, stats, export):
     app.include_router(r.router)
 
 

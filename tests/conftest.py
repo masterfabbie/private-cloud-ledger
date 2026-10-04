@@ -3,6 +3,9 @@ import os
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ["ADMIN_PASSWORD"] = "admin-password"
 os.environ["ADMIN_USERNAME"] = "admin"
+os.environ["BANK_SYNC_INTERVAL_HOURS"] = "0"
+os.environ["SECRET_KEY"] = "test-secret"
+os.environ["FINTS_PRODUCT_ID"] = "TESTPRODUCT"
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402

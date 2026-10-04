@@ -3,6 +3,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy import (
     JSON,
     Boolean,
+    LargeBinary,
     Column,
     Date,
     DateTime,
@@ -185,3 +186,51 @@ class RecurringSeries(Base):
         ForeignKey("categories.id", ondelete="SET NULL"), nullable=True
     )
     status: Mapped[str] = mapped_column(String(10), default="detected")  # detected | confirmed | dismissed
+
+
+class BankConnection(Base):
+    """Online-banking access via FinTS (HBCI PIN/TAN) for one bank login."""
+
+    __tablename__ = "bank_connections"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    blz: Mapped[str] = mapped_column(String(8))
+    server_url: Mapped[str] = mapped_column(String(255))
+    login_name: Mapped[str] = mapped_column(String(100))
+    customer_id: Mapped[str] = mapped_column(String(100), default="")
+    pin_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)  # Fernet token, only if the user opted in
+    tan_mechanism: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    tan_medium: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    client_state: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)  # python-fints deconstruct() blob
+    auto_sync: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_status: Mapped[str] = mapped_column(String(20), default="new")  # new | ok | error | tan_required | pin_error
+    last_message: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    links: Mapped[list["BankAccountLink"]] = relationship(
+        back_populates="connection", cascade="all, delete-orphan", order_by="BankAccountLink.id"
+    )
+
+
+class BankAccountLink(Base):
+    """One account at the bank, optionally linked to a Proud Ledger account."""
+
+    __tablename__ = "bank_account_links"
+    __table_args__ = (UniqueConstraint("connection_id", "iban", "account_number", "subaccount"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    connection_id: Mapped[int] = mapped_column(ForeignKey("bank_connections.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    iban: Mapped[str] = mapped_column(String(34), default="")
+    bic: Mapped[str] = mapped_column(String(11), default="")
+    account_number: Mapped[str] = mapped_column(String(30), default="")
+    subaccount: Mapped[str] = mapped_column(String(30), default="")
+    blz: Mapped[str] = mapped_column(String(8), default="")
+    account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True)
+    sync_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    synced_until: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    connection: Mapped[BankConnection] = relationship(back_populates="links")
