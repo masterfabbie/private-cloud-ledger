@@ -7,7 +7,9 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.auth import get_current_user
 from app.db import get_db
+from app.routers.attachments import attachment_out
 from app.routers.common import owned, owned_account
+from app.services import attachments as att_service
 from app.services import recurring, splits as split_service
 from app.services.importer import manual_dedup_hash
 from app.services.queries import TxFilters, filtered_transactions, tx_filters
@@ -41,6 +43,7 @@ def to_out(tx: models.Transaction) -> schemas.TransactionOut:
             )
             for sp in tx.splits
         ],
+        attachments=[attachment_out(a) for a in tx.attachments],
     )
 
 
@@ -162,8 +165,10 @@ def bulk_categorize(
 @router.delete("/{tx_id}", status_code=204)
 def delete_transaction(tx_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     tx = owned(db, models.Transaction, tx_id, user)
+    files = [(a.user_id, a.stored_name) for a in tx.attachments]
     db.delete(tx)
     db.commit()
+    att_service.remove_files(files)
 
 
 @router.delete("", status_code=200)
@@ -181,8 +186,13 @@ def delete_all(
         owned_account(db, account_id, user)
         stmt = stmt.where(models.Transaction.account_id == account_id)
         batches = batches.where(models.ImportBatch.account_id == account_id)
+    conditions = [models.Transaction.user_id == user.id]
+    if account_id:
+        conditions.append(models.Transaction.account_id == account_id)
+    files = att_service.files_of(db, *conditions)
     result = db.execute(stmt)
     db.execute(batches)
     db.commit()
+    att_service.remove_files(files)
     recurring.detect(db, user.id)
     return {"deleted": result.rowcount}

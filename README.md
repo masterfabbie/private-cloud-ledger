@@ -25,6 +25,11 @@ It replaces the old single-file version, which is kept at `legacy/financetracker
 - **Credit cards:** give a credit card account the text your bank uses for the card settlement (e.g. "KREDITKARTENABRECHNUNG").
   - The settlement on your checking account and the matching payment on the card statement are counted as transfers, so card purchases are not counted twice.
   - The Accounts page shows each settlement and whether the card statement has the matching payment.
+- **Receipts:** attach photos or PDFs to any transaction.
+  - On a phone, **📷 Take photo** opens the camera directly.
+  - Photos are rotated and resized automatically, and location and camera data are removed.
+  - Files are stored on the data volume (`/data/attachments`).
+- **Works on phones:** a compact header, one swipeable row of tabs that stays at the top, folding filters and full-screen dialogs.
 - **Split transactions:** distribute one booking, such as an Amazon order or a supermarket receipt, over several categories.
   - The editor shows the remaining amount, and "= rest" fills the remaining amount into a row.
   - You can paste the items as lines (`Kaffeebohnen 12,99`). Categories are suggested by your rules.
@@ -110,6 +115,8 @@ The data lives in the Docker volume `ft-data`, in the file `/data/finance.db` in
 | `OIDC_*` | – | Single sign-on, see below |
 | `FINTS_PRODUCT_ID` | – | FinTS product registration number; enables bank sync |
 | `BANK_SYNC_INTERVAL_HOURS` | `6` | Automatic bank sync interval; `0` turns it off |
+| `MAX_ATTACHMENT_MB` | `15` | Maximum size of one receipt file |
+| `ATTACHMENTS_DIR` | next to the database | Where receipt files are stored |
 
 ### Single sign-on (authentik and other OIDC providers)
 
@@ -185,13 +192,14 @@ The app runs a single worker on purpose. SQLite, the pending-upload store and th
 # consistent copy of the database, then copy it out of the container
 docker compose exec app sqlite3 /data/finance.db ".backup /data/backup.db"
 docker compose cp app:/data/backup.db ./finance-backup.db
+docker compose cp app:/data/attachments ./attachments-backup   # receipt files
 ```
 
 Each user can also download a JSON backup of their own data under **Settings**, and restore it there with **Restore from backup**. A restore works like this:
 - **Check first:** the file is checked completely before anything changes, and you see how many accounts, transactions and other items it contains compared with your current data.
 - **Replace:** restoring replaces all of your own data. Other users are not affected.
 - **New server or user:** this is also how you move your data to a new server or another user account. Log in as the target user and restore the file there.
-- **Not included:** saved CSV column settings are not part of the backup.
+- **Not included:** saved CSV column settings and **receipt files** are not part of the backup. Restoring deletes the receipts of the replaced transactions, and the dialog warns you about this. To keep receipts, back up the whole `/data` volume (database and `attachments` folder) as shown above.
 
 ### Updating
 

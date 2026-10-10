@@ -12,6 +12,7 @@ from app.config import get_settings
 from app.db import get_db
 from app.routers.common import owned, owned_account
 from app.services import csv_parser as cp
+from app.services import attachments as att_service
 from app.services import importer, recurring
 
 router = APIRouter(prefix="/api/imports", tags=["import"])
@@ -188,6 +189,7 @@ def list_batches(db: Session = Depends(get_db), user: models.User = Depends(get_
 @router.delete("/{batch_id}")
 def undo_batch(batch_id: int, db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     batch = owned(db, models.ImportBatch, batch_id, user)
+    files = att_service.files_of(db, models.Transaction.import_batch_id == batch.id, models.Transaction.user_id == user.id)
     res = db.execute(
         delete(models.Transaction).where(
             models.Transaction.import_batch_id == batch.id, models.Transaction.user_id == user.id
@@ -195,5 +197,6 @@ def undo_batch(batch_id: int, db: Session = Depends(get_db), user: models.User =
     )
     db.delete(batch)
     db.commit()
+    att_service.remove_files(files)
     recurring.detect(db, user.id)
     return {"deleted": res.rowcount}

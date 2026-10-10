@@ -18,6 +18,7 @@ async function render() {
     const name = (location.hash.replace(/^#\/?/, '').split('?')[0]) || 'dashboard';
     const page = routes[name] || dashboard;
     document.querySelectorAll('nav.tabs a').forEach(a => a.classList.toggle('active', a.dataset.route === name));
+    document.querySelector('nav.tabs a.active')?.scrollIntoView({ block: 'nearest', inline: 'center' });
     clear(view);
     try {
         await page.render(view);

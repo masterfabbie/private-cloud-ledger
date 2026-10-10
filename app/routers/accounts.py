@@ -6,6 +6,7 @@ from app import models, schemas
 from app.auth import get_current_user
 from app.db import get_db
 from app.routers.common import owned
+from app.services import attachments as att_service
 from app.services import cards
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
@@ -47,8 +48,10 @@ def delete_account(account_id: int, db: Session = Depends(get_db), user: models.
     count = db.scalar(select(func.count()).where(models.Account.user_id == user.id))
     if count <= 1:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "You need at least one account")
+    files = att_service.files_of(db, models.Transaction.account_id == acc.id)
     db.delete(acc)  # its transactions are deleted via ON DELETE CASCADE
     db.commit()
+    att_service.remove_files(files)
 
 
 @router.post("/{account_id}/apply-settlements")

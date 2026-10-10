@@ -24,10 +24,16 @@ export async function render(root) {
         options([['income', 'Income'], ['expense', 'Expenses']], local.kind, 'Income & expenses'));
 
     const bar = await filterBar(reload, [cat, tag, kind]);
-    const exportLink = fmt => el('a', { class: 'btn-light', href: '#', onclick: e => {
-        e.preventDefault();
+    const menu = el('details', { class: 'menu' });
+    const exportLink = fmt => el('button', { type: 'button', onclick: () => {
+        menu.open = false;
         location.href = `/api/export/${fmt}?` + toQuery(query());
     } }, `Export ${fmt.toUpperCase()}`);
+    menu.append(
+        el('summary', { class: 'btn-light' }, '⋯ More'),
+        el('div', { class: 'menu-items' },
+            exportLink('csv'), exportLink('xlsx'),
+            el('button', { type: 'button', class: 'danger', onclick: e => { menu.open = false; deleteAll(e.currentTarget, list, pager); } }, 'Delete all transactions')));
 
     root.append(
         bar,
@@ -36,8 +42,7 @@ export async function render(root) {
                 el('h2', {}, 'Transactions'),
                 el('div', { class: 'row' },
                     el('button', { class: 'btn', onclick: () => editTransaction(null).then(ok => ok && loadList(list, pager)) }, '+ Add Transaction'),
-                    exportLink('csv'), exportLink('xlsx'),
-                    el('button', { class: 'btn-danger', onclick: e => deleteAll(e.currentTarget, list, pager) }, 'Delete All'))),
+                    menu)),
             el('div', { style: { marginBottom: '12px' } }, search),
             list, pager));
     await loadList(list, pager);
@@ -112,6 +117,11 @@ function row(t, refresh) {
             splitLines),
         el('div', { class: 'transaction-actions' },
             el('div', { class: `transaction-amount ${t.type === 'income' ? 'pos' : 'neg'}` }, fmtSigned(t.amount_cents)),
+            el('button', {
+                class: `btn-light btn-sm ${t.attachments.length ? 'has-attachments' : ''}`,
+                title: t.attachments.length ? `${t.attachments.length} receipt(s)` : 'Add a receipt (photo or PDF)',
+                onclick: () => receiptsDialog(t).then(changed => changed && refresh()),
+            }, t.attachments.length ? `📎 ${t.attachments.length}` : '📎'),
             el('button', { class: 'btn-light btn-sm', title: 'Distribute this amount over several categories', onclick: () => splitEditor(t).then(ok => ok && refresh()) }, 'Split'),
             el('button', { class: 'btn-light btn-sm', onclick: () => editTransaction(t).then(ok => ok && refresh()) }, 'Edit'),
             el('button', { class: 'btn-danger btn-sm', onclick: async () => {
@@ -317,4 +327,77 @@ export function splitEditor(t) {
             el('p', { class: 'muted small' }, 'The last amount on each line is used; categories are suggested by your rules.'),
             el('div', { class: 'actions' }, unsplit, el('button', { type: 'button', class: 'btn-light', onclick: () => close(false) }, 'Cancel'), save));
     }, { wide: true });
+}
+
+/** Receipts of a transaction: thumbnails, take a photo with the phone camera, or upload files. */
+export function receiptsDialog(t) {
+    return modal('Receipts', close => {
+        let changed = false;
+        let items = [...t.attachments];
+        const grid = el('div', { class: 'receipt-grid' });
+        const status = el('div', { class: 'muted small' });
+
+        const render = () => {
+            clear(grid);
+            if (!items.length) grid.append(el('p', { class: 'muted' }, 'No receipt yet.'));
+            for (const a of items) {
+                const preview = a.thumb_url
+                    ? el('img', { src: a.thumb_url, alt: a.filename, loading: 'lazy' })
+                    : el('div', { class: 'receipt-file' }, a.content_type === 'application/pdf' ? 'PDF' : 'FILE');
+                const del = el('button', { type: 'button', class: 'receipt-delete', title: 'Delete', 'aria-label': `Delete ${a.filename}` }, '×');
+                del.addEventListener('click', async () => {
+                    if (!await confirmDialog(`Delete “${a.filename}”?`, { danger: true, confirmLabel: 'Delete' })) return;
+                    run(del, async () => {
+                        await api(`/attachments/${a.id}`, { method: 'DELETE' });
+                        items = items.filter(x => x.id !== a.id);
+                        changed = true;
+                        render();
+                    });
+                });
+                grid.append(el('div', { class: 'receipt' },
+                    el('a', { href: a.url, target: '_blank', rel: 'noopener', title: `Open ${a.filename}` }, preview),
+                    el('div', { class: 'receipt-name small', title: a.filename }, a.filename),
+                    del));
+            }
+        };
+
+        const upload = async (input, button) => {
+            if (!input.files.length) return;
+            const form = new FormData();
+            for (const f of input.files) form.append('files', f);
+            status.textContent = `Uploading ${input.files.length} file(s)…`;
+            await run(button, async () => {
+                try {
+                    const added = await api(`/transactions/${t.id}/attachments`, { method: 'POST', form });
+                    items = items.concat(added);
+                    changed = true;
+                    status.textContent = '';
+                    render();
+                } catch (e) {
+                    status.textContent = '';
+                    throw e;
+                }
+            });
+            input.value = '';
+        };
+
+        // capture="environment" opens the rear camera directly on phones; desktops show a file picker.
+        const camera = el('input', { type: 'file', accept: 'image/*', capture: 'environment', class: 'hidden' });
+        const picker = el('input', { type: 'file', accept: 'image/*,application/pdf', multiple: true, class: 'hidden' });
+        const cameraBtn = el('button', { type: 'button', class: 'btn', onclick: () => camera.click() }, '📷 Take photo');
+        const pickerBtn = el('button', { type: 'button', class: 'btn-light', onclick: () => picker.click() }, 'Choose file');
+        camera.addEventListener('change', () => upload(camera, cameraBtn));
+        picker.addEventListener('change', () => upload(picker, pickerBtn));
+        render();
+
+        return el('div', {},
+            el('div', { class: 'muted small', style: { marginBottom: '12px' } },
+                `${t.description} · ${fmtDate(t.booking_date)} · ${fmtSigned(t.amount_cents)}`),
+            grid,
+            el('div', { class: 'row', style: { marginTop: '16px' } }, cameraBtn, pickerBtn, camera, picker),
+            status,
+            el('p', { class: 'muted small', style: { marginTop: '8px' } },
+                'Photos are rotated and resized automatically; location and camera data are removed. PDFs are stored as they are.'),
+            el('div', { class: 'actions' }, el('button', { type: 'button', class: 'btn-light', onclick: () => close(changed) }, 'Close')));
+    });
 }

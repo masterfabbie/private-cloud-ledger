@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.auth import hash_password, require_admin, validate_password
 from app.db import get_db
+from app.services import attachments as att_service
 from app.services.defaults import seed_user_defaults
 
 router = APIRouter(prefix="/api/admin/users", tags=["admin"])
@@ -61,5 +62,7 @@ def delete_user(user_id: int, db: Session = Depends(get_db), admin: models.User 
     user = _get(db, user_id)
     if user.id == admin.id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "You cannot delete yourself")
+    files = att_service.files_of(db, models.Transaction.user_id == user.id)
     db.delete(user)  # all of the user's data is removed via ON DELETE CASCADE
     db.commit()
+    att_service.remove_files(files)

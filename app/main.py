@@ -12,9 +12,11 @@ from app.config import get_settings
 from app.version import APP_NAME, app_commit, app_version
 from app import db as db_module
 from app.db import SessionLocal
+from app.services import attachments as att_service
 from app.services import banksync
 from app.routers import (
     accounts,
+    attachments,
     auth,
     bank,
     budgets,
@@ -35,6 +37,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 async def lifespan(_app: FastAPI):
     with SessionLocal() as db:
         ensure_admin(db)
+        att_service.cleanup_orphans(db)
     stop_scheduler = banksync.start_scheduler(lambda: db_module.SessionLocal())
     yield
     if stop_scheduler:
@@ -54,7 +57,7 @@ app.add_middleware(
     https_only=_settings.cookie_secure,
 )
 
-for r in (auth, users, accounts, bank, categories, transactions, imports, rules, budgets, recurring, stats, export):
+for r in (auth, users, accounts, attachments, bank, categories, transactions, imports, rules, budgets, recurring, stats, export):
     app.include_router(r.router)
 
 

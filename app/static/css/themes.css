@@ -226,3 +226,64 @@ html[data-theme="paper"] a { color: var(--primary); }
 /* The brand is a link to the dashboard but should not look like one. */
 html[data-theme] .brand { color: inherit; }
 html[data-theme="clean"] .brand .brand-name { color: #0f2a55; }
+
+
+/* ------------------------------------------------------------------ Phones
+   Applies to every theme. Selectors are doubled (plain + html[data-theme]) so they
+   win over both the classic base styles and the theme overrides above. */
+@media (max-width: 768px) {
+    body, html[data-theme] body { padding: 0; }
+    .container, html[data-theme] .container { border-radius: 0; overflow: visible; box-shadow: none; }
+
+    .header, html[data-theme] .header { padding: 10px 14px; flex-wrap: nowrap; gap: 10px; }
+    .brand img, html[data-theme] .brand img { width: 30px; height: 30px; border-radius: 8px; }
+    .brand-name, html[data-theme] .brand-name { font-size: 1.1rem; }
+    .brand-tagline { display: none; }
+    .header .user, html[data-theme] .header .user { gap: 10px; font-size: 0.82rem; flex-shrink: 0; }
+
+    /* One scrollable row of tabs that stays at the top. */
+    nav.tabs, html[data-theme] nav.tabs {
+        flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+        position: sticky; top: 0; z-index: 50; padding: 0 6px; gap: 0;
+    }
+    nav.tabs::-webkit-scrollbar { display: none; }
+    nav.tabs a, html[data-theme] nav.tabs a { white-space: nowrap; flex-shrink: 0; padding: 10px 12px; font-size: 0.9rem; margin: 0; }
+
+    main, html[data-theme] main { padding: 12px; }
+    .card, html[data-theme] .card { padding: 14px; margin-bottom: 14px; border-radius: 12px; }
+    .grid-2, html[data-theme] .grid-2 { gap: 14px; }
+    .grid-2[style] { margin-bottom: 14px !important; }
+    h2, html[data-theme] h2 { font-size: 1.1rem; }
+
+    .filter-panel > summary { display: inline-block; }
+    .filter-panel { margin-bottom: 12px; }
+    .filter-panel[open] > .filters { margin-top: 10px; }
+    .filters { display: grid !important; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .filters select, .filters input { min-width: 0; width: 100%; }
+
+    /* Key figures: three compact tiles per row. */
+    .summary-grid, html[data-theme] .summary-grid { grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; }
+    .summary-card, html[data-theme] .summary-card { padding: 10px; text-align: left; }
+    .summary-card h3, html[data-theme] .summary-card h3 { font-size: 0.62rem; letter-spacing: 0.04em; margin-bottom: 4px; }
+    .summary-card .amount, html[data-theme] .summary-card .amount { font-size: 1.02rem; }
+    .summary-card .sub { font-size: 0.72rem; }
+
+    /* Category chips: one swipeable row instead of many lines. */
+    .chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 4px; margin-bottom: 10px; }
+    .chips::-webkit-scrollbar { display: none; }
+    .chip { flex-shrink: 0; }
+    .chart-box { height: 260px; }
+
+    .spread { gap: 8px; }
+    .card > table.data, .card > div > table.data { display: block; overflow-x: auto; }
+    .transaction-item { padding: 12px 2px; }
+    .transaction-actions { width: 100%; justify-content: flex-end; flex-wrap: wrap; }
+    .transaction-actions .transaction-amount { margin-right: auto; }
+
+    /* Dialogs use the whole screen. */
+    .modal-backdrop { padding: 0; align-items: stretch; }
+    .modal, .modal-wide, html[data-theme] .modal { width: 100%; max-width: 100%; max-height: 100dvh; min-height: 100dvh; border-radius: 0; padding: 18px 14px; }
+    .modal .actions { position: sticky; bottom: -18px; background: inherit; padding: 10px 0; margin-bottom: -18px; }
+    .split-row { grid-template-columns: 1fr 1fr; }
+    .split-row > :nth-child(3) { grid-column: 1 / -1; }
+}

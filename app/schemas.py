@@ -149,6 +149,16 @@ class SplitTextIn(BaseModel):
     text: str = Field(max_length=20000)
 
 
+class AttachmentOut(BaseModel):
+    id: int
+    filename: str
+    content_type: str
+    size: int
+    url: str
+    thumb_url: str | None
+    created_at: datetime
+
+
 class TransactionOut(BaseModel):
     id: int
     account_id: int
@@ -166,6 +176,7 @@ class TransactionOut(BaseModel):
     tags: list[str]
     import_batch_id: int | None
     splits: list[SplitPartOut] = []
+    attachments: list[AttachmentOut] = []
 
 
 class TransactionPage(BaseModel):

@@ -247,6 +247,32 @@ button:disabled { opacity: 0.6; cursor: not-allowed; transform: none !important;
 .split-rows { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
 .split-row { display: grid; grid-template-columns: 130px minmax(140px, 1fr) minmax(140px, 1.4fr) auto auto; gap: 8px; align-items: center; }
 @media (max-width: 700px) { .split-row { grid-template-columns: 1fr 1fr; } }
+.receipt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
+.receipt { position: relative; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--soft); }
+.receipt img, .receipt-file { display: block; width: 100%; aspect-ratio: 3 / 4; object-fit: cover; }
+.receipt-file { display: flex; align-items: center; justify-content: center; font-weight: 700; color: var(--muted); letter-spacing: 0.1em; }
+.receipt-name { padding: 4px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.receipt-delete { position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; border-radius: 50%; border: none;
+    background: rgba(0, 0, 0, 0.55); color: white; font-size: 18px; line-height: 1; cursor: pointer; }
+.has-attachments { border-color: var(--primary) !important; color: var(--primary) !important; }
+/* filters panel and "More" menu */
+.filter-panel { margin-bottom: 20px; }
+.filter-panel > summary { list-style: none; cursor: pointer; display: none; }
+.filter-panel > summary::-webkit-details-marker { display: none; }
+.menu { position: relative; }
+.menu > summary { list-style: none; cursor: pointer; }
+.menu > summary::-webkit-details-marker { display: none; }
+.menu-items {
+    position: absolute; right: 0; top: calc(100% + 6px); z-index: 60; min-width: 220px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15); padding: 6px; display: flex; flex-direction: column;
+}
+.menu-items button {
+    background: none; border: none; text-align: left; padding: 10px 12px; border-radius: 7px; cursor: pointer;
+    font-size: 0.95rem; color: var(--text);
+}
+.menu-items button:hover { background: var(--soft); }
+.menu-items button.danger { color: var(--expense); }
 .pager { display: flex; gap: 10px; justify-content: center; align-items: center; margin-top: 16px; }
 
 /* upload */

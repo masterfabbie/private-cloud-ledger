@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     oidc_admin_group: str = ""  # members become admins; when empty, admin rights are managed in the app
     oidc_link_existing_users: bool = False  # attach SSO logins to local users with the same username
 
+    # Receipts and other attachments. Empty = an "attachments" folder next to the SQLite database.
+    attachments_dir: str = ""
+    max_attachment_mb: int = 15
+
     # Bank sync via FinTS/HBCI. The product ID is the registration number from the
     # Deutsche Kreditwirtschaft (free, apply at https://www.fints.org).
     fints_product_id: str = ""

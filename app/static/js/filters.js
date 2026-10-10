@@ -10,7 +10,17 @@ export async function filterBar(onChange, extra = []) {
         options(years, f.year, 'All years'));
     const month = el('select', { onchange: () => { f.month = month.value; onChange(); } },
         options(MONTHS.map((m, i) => [i + 1, m]), f.month, 'All months'));
-    return el('div', { class: 'row filters', style: { marginBottom: '20px' } }, account, year, month, extra);
+    const selects = [account, year, month, ...extra];
+    const summary = el('summary', { class: 'btn-light btn-sm' });
+    const setSummary = () => {
+        const active = selects.filter(s => s.value !== '').length;
+        summary.textContent = active ? `⚙ Filters · ${active} active` : '⚙ Filters';
+    };
+    selects.forEach(s => s.addEventListener('change', setSummary));
+    setSummary();
+    // On phones the filters fold away behind one button; on larger screens they are always shown.
+    return el('details', { class: 'filter-panel', open: window.matchMedia('(min-width: 769px)').matches },
+        summary, el('div', { class: 'row filters' }, selects));
 }
 
 export const filterQuery = () => ({ ...state.filters });

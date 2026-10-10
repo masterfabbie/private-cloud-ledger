@@ -13,6 +13,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app import models
+from app.services import attachments
 
 BACKUP_VERSION = 1
 
@@ -216,12 +217,14 @@ def current_counts(db: Session, user_id: int) -> dict:
         "rules": count(models.Rule),
         "budgets": count(models.Budget),
         "recurring": count(models.RecurringSeries),
+        "attachments": count(models.Attachment),
     }
 
 
 def restore(db: Session, user: models.User, bk: Backup) -> None:
     """Replace all of the user's data with the backup. Commits on success, rolls back on error."""
     uid = user.id
+    files = attachments.files_of(db, models.Transaction.user_id == uid)
     try:
         for model in (
             models.Transaction, models.ImportBatch, models.RecurringSeries, models.Budget,
@@ -285,3 +288,4 @@ def restore(db: Session, user: models.User, bk: Backup) -> None:
     except Exception:
         db.rollback()
         raise
+    attachments.remove_files(files)  # receipts belonged to the replaced transactions

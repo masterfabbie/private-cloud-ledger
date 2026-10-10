@@ -136,6 +136,9 @@ class Transaction(Base):
     splits: Mapped[list["TransactionSplit"]] = relationship(
         back_populates="transaction", cascade="all, delete-orphan", lazy="selectin", order_by="TransactionSplit.id"
     )
+    attachments: Mapped[list["Attachment"]] = relationship(
+        back_populates="transaction", cascade="all, delete-orphan", lazy="selectin", order_by="Attachment.id"
+    )
 
 
 class TransactionSplit(Base):
@@ -260,3 +263,21 @@ class BankAccountLink(Base):
     synced_until: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     connection: Mapped[BankConnection] = relationship(back_populates="links")
+
+
+class Attachment(Base):
+    """A receipt or other document attached to a transaction. The file lives on disk."""
+
+    __tablename__ = "attachments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    transaction_id: Mapped[int] = mapped_column(ForeignKey("transactions.id", ondelete="CASCADE"), index=True)
+    filename: Mapped[str] = mapped_column(String(255))
+    content_type: Mapped[str] = mapped_column(String(50))
+    size: Mapped[int] = mapped_column(Integer)
+    stored_name: Mapped[str] = mapped_column(String(64), unique=True)
+    has_thumb: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    transaction: Mapped[Transaction] = relationship(back_populates="attachments")

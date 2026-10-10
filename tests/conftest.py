@@ -7,6 +7,10 @@ os.environ["BANK_SYNC_INTERVAL_HOURS"] = "0"
 os.environ["SECRET_KEY"] = "test-secret"
 os.environ["FINTS_PRODUCT_ID"] = "TESTPRODUCT"
 
+import tempfile  # noqa: E402
+
+os.environ["ATTACHMENTS_DIR"] = tempfile.mkdtemp(prefix="pl-attachments-")
+
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import create_engine  # noqa: E402

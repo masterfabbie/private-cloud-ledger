@@ -56,6 +56,7 @@ const plural = (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`;
 const COUNT_LABELS = [
     ['accounts', 'accounts'], ['categories', 'categories'], ['transactions', 'transactions'],
     ['rules', 'rules'], ['budgets', 'budgets'], ['recurring', 'subscriptions'],
+    ['attachments', 'receipts (not part of backups)'],
 ];
 
 function restoreCard() {
@@ -110,7 +111,9 @@ function restoreCard() {
                 el('table', { class: 'data', style: { margin: '12px 0', maxWidth: '520px' } },
                     el('thead', {}, el('tr', {}, el('th', {}, 'Contents'), el('th', { class: 'num' }, 'In the backup'), el('th', { class: 'num' }, 'Your data now'))),
                     el('tbody', {}, COUNT_LABELS.map(([key, label]) => el('tr', {},
-                        el('td', {}, label), el('td', { class: 'num' }, b[key]), el('td', { class: 'num' }, cur[key]))))),
+                        el('td', {}, label), el('td', { class: 'num' }, b[key] ?? '–'), el('td', { class: 'num' }, cur[key]))))),
+                cur.attachments ? el('div', { class: 'status error', style: { marginTop: 0, marginBottom: '12px' } },
+                    `Your ${cur.attachments} receipt file(s) belong to your current transactions and will be deleted by the restore.`) : null,
                 el('div', { class: 'row' },
                     restoreBtn,
                     el('a', { class: 'btn-light', href: '/api/export/json' }, 'Download current data first')));
