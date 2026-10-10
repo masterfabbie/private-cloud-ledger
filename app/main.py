@@ -71,6 +71,11 @@ def version_info():
 @app.middleware("http")
 async def security_headers(request, call_next):
     response = await call_next(request)
+    path = request.url.path
+    if path == "/" or path.startswith("/static/js/") or path.startswith("/static/css/"):
+        # Always revalidate the app's code (cheap thanks to ETag/304), so browsers never keep
+        # running old JavaScript after an update.
+        response.headers["Cache-Control"] = "no-cache"
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "same-origin")

@@ -275,3 +275,13 @@ def test_delete_all_rules_and_subscriptions(admin, client, db):
     assert admin.delete("/api/recurring", params={"confirm": "DELETE"}).json() == {"deleted": 3}
     assert admin.get("/api/recurring").json() == []
     assert admin.get("/api/transactions").json()["total"] == 1 and tx["id"]
+
+
+def test_app_code_is_revalidated_by_browsers(client):
+    for path in ("/", "/static/js/app.js", "/static/css/app.css"):
+        r = client.get(path)
+        assert r.status_code == 200 and r.headers["cache-control"] == "no-cache", path
+    js = client.get("/static/js/app.js")
+    again = client.get("/static/js/app.js", headers={"If-None-Match": js.headers["etag"]})
+    assert again.status_code == 304  # unchanged files are not downloaded again
+    assert "cache-control" not in {k.lower() for k in client.get("/static/img/logo.png").headers}
