@@ -3,6 +3,7 @@ import {
     loadRefs, modal, options, parseMoney, run, showError, state, toast, todayIso, toQuery,
 } from './api.js';
 import { filterBar, filterQuery } from './filters.js';
+import { scanReceiptDialog } from './receipts.js';
 
 const local = { q: '', category_id: '', tag: '', kind: '', page: 1 };
 const PAGE_SIZE = 50;
@@ -42,6 +43,14 @@ export async function render(root) {
                 el('h2', {}, 'Transactions'),
                 el('div', { class: 'row' },
                     el('button', { class: 'btn', onclick: () => editTransaction(null).then(ok => ok && loadList(list, pager)) }, '+ Add Transaction'),
+                    state.receipts?.enabled ? el('button', { class: 'btn-light', onclick: async () => {
+                        const res = await scanReceiptDialog();
+                        if (!res) return;
+                        await loadList(list, pager);
+                        if (res.parts?.length) {
+                            if (await splitEditor(res.transaction, res.parts)) await loadList(list, pager);
+                        }
+                    } }, '🧾 Scan receipt') : null,
                     menu)),
             el('div', { style: { marginBottom: '12px' } }, search),
             list, pager));
@@ -120,7 +129,15 @@ function row(t, refresh) {
             el('button', {
                 class: `btn-light btn-sm ${t.attachments.length ? 'has-attachments' : ''}`,
                 title: t.attachments.length ? `${t.attachments.length} receipt(s)` : 'Add a receipt (photo or PDF)',
-                onclick: () => receiptsDialog(t).then(changed => changed && refresh()),
+                onclick: async () => {
+                    const result = await receiptsDialog(t);
+                    if (typeof result === 'string' && result.startsWith('split:')) {
+                        await splitEditor(t, JSON.parse(result.slice(6)));
+                        refresh();
+                    } else if (result) {
+                        refresh();
+                    }
+                },
             }, t.attachments.length ? `📎 ${t.attachments.length}` : '📎'),
             el('button', { class: 'btn-light btn-sm', title: 'Distribute this amount over several categories', onclick: () => splitEditor(t).then(ok => ok && refresh()) }, 'Split'),
             el('button', { class: 'btn-light btn-sm', onclick: () => editTransaction(t).then(ok => ok && refresh()) }, 'Edit'),
@@ -227,7 +244,7 @@ export function editTransaction(t) {
 }
 
 /** Distribute one transaction over several categories, e.g. the items of an Amazon order. */
-export function splitEditor(t) {
+export function splitEditor(t, initialParts = null) {
     return modal('Split transaction', close => {
         const sign = t.amount_cents < 0 ? -1 : 1;
         const total = Math.abs(t.amount_cents);
@@ -271,7 +288,8 @@ export function splitEditor(t) {
             return p;
         };
 
-        if (t.splits.length) t.splits.forEach(sp => addPart(sp));
+        if (initialParts?.length) initialParts.forEach(p => addPart({ ...p, amount_cents: Math.abs(p.amount_cents) }));
+        else if (t.splits.length) t.splits.forEach(sp => addPart(sp));
         else { addPart({ category_id: t.category_id }); addPart(); }
 
         // Paste lines from the order or statement: "12,99 Netflix", "USB cable; 9.99", ...
@@ -354,9 +372,23 @@ export function receiptsDialog(t) {
                         render();
                     });
                 });
+                const readBtn = state.receipts?.enabled
+                    ? el('button', { type: 'button', class: 'btn-light btn-sm receipt-read', title: 'Read the items and split the transaction' }, 'Read items')
+                    : null;
+                readBtn?.addEventListener('click', () => run(readBtn, async () => {
+                    readBtn.textContent = 'Reading…';
+                    try {
+                        const r = await api(`/attachments/${a.id}/scan`, { method: 'POST' });
+                        if (!r.parts.length) throw new Error('No individual items were recognised on this receipt.');
+                        close('split:' + JSON.stringify(r.parts));
+                    } finally {
+                        readBtn.textContent = 'Read items';
+                    }
+                }));
                 grid.append(el('div', { class: 'receipt' },
                     el('a', { href: a.url, target: '_blank', rel: 'noopener', title: `Open ${a.filename}` }, preview),
                     el('div', { class: 'receipt-name small', title: a.filename }, a.filename),
+                    readBtn,
                     del));
             }
         };

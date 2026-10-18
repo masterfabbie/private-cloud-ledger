@@ -36,6 +36,15 @@ class Settings(BaseSettings):
     attachments_dir: str = ""
     max_attachment_mb: int = 15
 
+    # Reading receipts: off | tesseract (local text recognition) | claude (Anthropic API) | ollama (local AI model)
+    receipt_scanner: str = "off"
+    receipt_scan_timeout: int = 120
+    tesseract_lang: str = "deu+eng"
+    anthropic_api_key: str = ""  # empty: the SDK's own resolution (ANTHROPIC_API_KEY etc.)
+    receipt_claude_model: str = "claude-opus-5"
+    ollama_url: str = "http://localhost:11434"
+    ollama_model: str = "qwen2.5vl"
+
     # Bank sync via FinTS/HBCI. The product ID is the registration number from the
     # Deutsche Kreditwirtschaft (free, apply at https://www.fints.org).
     fints_product_id: str = ""

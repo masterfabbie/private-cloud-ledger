@@ -6,7 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DATABASE_URL=sqlite:////data/finance.db
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends sqlite3 \
+    && apt-get install -y --no-install-recommends sqlite3 tesseract-ocr tesseract-ocr-deu tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 1000 app \
     && mkdir /data && chown app:app /data

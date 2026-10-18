@@ -103,6 +103,7 @@ async function start() {
         return;
     }
     await loadRefs();
+    state.receipts = await api('/receipts/config').catch(() => ({ enabled: false }));
     document.getElementById('nav').classList.remove('hidden');
     document.getElementById('userBox').classList.remove('hidden');
     document.getElementById('userName').textContent = `👤 ${state.user.username}`;

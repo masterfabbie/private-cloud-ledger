@@ -29,6 +29,7 @@ It replaces the old single-file version, which is kept at `legacy/financetracker
   - On a phone, **📷 Take photo** opens the camera directly.
   - Photos are rotated and resized automatically, and location and camera data are removed.
   - Files are stored on the data volume (`/data/attachments`).
+- **Reading receipts (optional):** scan a receipt, and Proud Ledger reads the merchant, date, total and items. It suggests the matching bank transaction, attaches the photo and fills the split editor with the items. You choose the reader: local text recognition, Claude, or a local AI model via Ollama.
 - **Works on phones:** a compact header, one swipeable row of tabs that stays at the top, folding filters and full-screen dialogs.
 - **Split transactions:** distribute one booking, such as an Amazon order or a supermarket receipt, over several categories.
   - The editor shows the remaining amount, and "= rest" fills the remaining amount into a row.
@@ -117,6 +118,7 @@ The data lives in the Docker volume `ft-data`, in the file `/data/finance.db` in
 | `BANK_SYNC_INTERVAL_HOURS` | `6` | Automatic bank sync interval; `0` turns it off |
 | `MAX_ATTACHMENT_MB` | `15` | Maximum size of one receipt file |
 | `ATTACHMENTS_DIR` | next to the database | Where receipt files are stored |
+| `RECEIPT_SCANNER` | `off` | `off`, `tesseract`, `claude` or `ollama`, see "Reading receipts" |
 
 ### Single sign-on (authentik and other OIDC providers)
 
@@ -173,6 +175,26 @@ Proud Ledger can fetch transactions directly from banks that offer FinTS with PI
 What else to know:
 - **Duplicates:** synced transactions go through the same duplicate detection, rules, transfer detection and subscription detection as CSV imports. Each sync appears in the import history and can be undone there.
 - **Credentials and backups:** bank credentials are never part of the JSON backup.
+
+### Reading receipts
+
+Set `RECEIPT_SCANNER` in `.env` to choose how receipts are read. It is `off` by default.
+
+| Value | How it works | Privacy | Notes |
+|---|---|---|---|
+| `tesseract` | Text recognition inside the container, then rules to find total, date and items | Stays on your server | Totals and dates usually work; individual items are less reliable on crumpled or faded receipts. `TESSERACT_LANG` sets the languages (default `deu+eng`). |
+| `claude` | Anthropic's Claude reads the photo or PDF and returns structured data | **The image is sent to Anthropic** | Best results. Needs `ANTHROPIC_API_KEY`; costs a small amount per receipt. The model is set with `RECEIPT_CLAUDE_MODEL` (default `claude-opus-5`). |
+| `ollama` | A vision model on your own [Ollama](https://ollama.com) server reads the photo | Stays on your network | Set `OLLAMA_URL` (reachable from the container) and `OLLAMA_MODEL` (default `qwen2.5vl`; install it with `ollama pull qwen2.5vl`). A GPU makes it much faster. |
+
+When a reader is set, the transaction list shows **🧾 Scan receipt**:
+1. Take a photo or choose a file.
+2. Check the merchant, date and total that were read.
+3. Pick the suggested bank transaction (same amount, close date) or create a new one.
+4. The receipt is attached. If items were recognised, the split editor opens with them already filled in. Discounts and deposit returns are folded into the item before them, and categories come from your rules.
+
+Receipts that are already attached have a **Read items** button that does the same.
+
+PDF receipts are read from their text layer with `tesseract` and `ollama`. Claude reads the PDF directly.
 
 ### HTTPS / reverse proxy
 

@@ -1,6 +1,6 @@
 [project]
 name = "proud-ledger"
-version = "2.4.0"
+version = "2.5.0"
 description = "Proud Ledger - private cloud ledger: self-hosted finance tracker with bank CSV import"
 requires-python = ">=3.11"
 dependencies = [
@@ -18,6 +18,9 @@ dependencies = [
     "fints>=5.0",
     "cryptography>=42",
     "pillow>=10",
+    "pypdf>=4",
+    "pytesseract>=0.3.10",
+    "anthropic>=1.15",
 ]
 
 [project.optional-dependencies]

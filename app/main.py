@@ -23,6 +23,7 @@ from app.routers import (
     categories,
     export,
     imports,
+    receipts,
     recurring,
     rules,
     stats,
@@ -57,7 +58,7 @@ app.add_middleware(
     https_only=_settings.cookie_secure,
 )
 
-for r in (auth, users, accounts, attachments, bank, categories, transactions, imports, rules, budgets, recurring, stats, export):
+for r in (auth, users, accounts, attachments, bank, categories, transactions, imports, receipts, rules, budgets, recurring, stats, export):
     app.include_router(r.router)
 
 
@@ -85,7 +86,7 @@ async def security_headers(request, call_next):
     if not request.url.path.startswith("/api/docs"):
         response.headers.setdefault(
             "Content-Security-Policy",
-            "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'",
+            "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'",
         )
     return response
 

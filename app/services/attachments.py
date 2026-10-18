@@ -9,6 +9,7 @@ import io
 import os
 import secrets
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from PIL import Image, ImageOps, UnidentifiedImageError
@@ -83,11 +84,19 @@ def _clean_name(name: str) -> str:
     return name[:200] or "receipt"
 
 
-def store(db: Session, tx: models.Transaction, filename: str, data: bytes) -> models.Attachment:
+@dataclass
+class Prepared:
+    """A file ready to be stored: photos already rotated, resized and stripped of metadata."""
+
+    filename: str
+    content_type: str
+    content: bytes
+    thumb: bytes | None
+
+
+def prepare(filename: str, data: bytes) -> Prepared:
     if len(data) > get_settings().max_attachment_mb * 1024 * 1024:
         raise AttachmentError(f"{filename}: the file is larger than {get_settings().max_attachment_mb} MB.")
-    if len(tx.attachments) >= MAX_PER_TRANSACTION:
-        raise AttachmentError(f"A transaction can have at most {MAX_PER_TRANSACTION} attachments.")
     kind = sniff(data)
     if kind is None:
         raise AttachmentError(f"{filename}: only photos (JPEG, PNG, WebP) and PDF files can be attached.")
@@ -96,33 +105,39 @@ def store(db: Session, tx: models.Transaction, filename: str, data: bytes) -> mo
             f"{filename}: HEIC photos are not supported. Take the photo directly in Proud Ledger, "
             "or set the iPhone camera to “Most Compatible” (JPEG)."
         )
-
-    stored = secrets.token_hex(16)
     name = _clean_name(filename)
-    thumb = None
     if kind == "application/pdf":
-        content, content_type = data, "application/pdf"
-    else:
-        try:
-            with Image.open(io.BytesIO(data)) as img:
-                img.load()
-                img = ImageOps.exif_transpose(img).convert("RGB")
-                content, thumb = _jpeg(img, MAX_IMAGE_SIDE), _jpeg(img, THUMB_SIDE)
-        except (UnidentifiedImageError, OSError, ValueError) as exc:
-            raise AttachmentError(f"{filename}: the image could not be read.") from exc
-        content_type = "image/jpeg"
-        if not name.lower().endswith((".jpg", ".jpeg")):
-            name = os.path.splitext(name)[0] + ".jpg"
+        return Prepared(name, "application/pdf", data, None)
+    try:
+        with Image.open(io.BytesIO(data)) as img:
+            img.load()
+            img = ImageOps.exif_transpose(img).convert("RGB")
+            content, thumb = _jpeg(img, MAX_IMAGE_SIDE), _jpeg(img, THUMB_SIDE)
+    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        raise AttachmentError(f"{filename}: the image could not be read.") from exc
+    if not name.lower().endswith((".jpg", ".jpeg")):
+        name = os.path.splitext(name)[0] + ".jpg"
+    return Prepared(name, "image/jpeg", content, thumb)
 
+
+def save(tx: models.Transaction, prepared: Prepared) -> models.Attachment:
+    if len(tx.attachments) >= MAX_PER_TRANSACTION:
+        raise AttachmentError(f"A transaction can have at most {MAX_PER_TRANSACTION} attachments.")
     att = models.Attachment(
-        user_id=tx.user_id, transaction_id=tx.id, filename=name, content_type=content_type,
-        size=len(content), stored_name=stored, has_thumb=thumb is not None,
+        user_id=tx.user_id, transaction_id=tx.id, filename=prepared.filename, content_type=prepared.content_type,
+        size=len(prepared.content), stored_name=secrets.token_hex(16), has_thumb=prepared.thumb is not None,
     )
-    _write(file_path(att), content)
-    if thumb is not None:
-        _write(file_path(att, thumb=True), thumb)
+    _write(file_path(att), prepared.content)
+    if prepared.thumb is not None:
+        _write(file_path(att, thumb=True), prepared.thumb)
     tx.attachments.append(att)
     return att
+
+
+def store(db: Session, tx: models.Transaction, filename: str, data: bytes) -> models.Attachment:
+    if len(tx.attachments) >= MAX_PER_TRANSACTION:
+        raise AttachmentError(f"A transaction can have at most {MAX_PER_TRANSACTION} attachments.")
+    return save(tx, prepare(filename, data))
 
 
 def remove_files(atts: list[tuple[int, str]]) -> None:
